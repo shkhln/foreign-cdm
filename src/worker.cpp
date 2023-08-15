@@ -69,7 +69,6 @@ class XBuffer: public cdm::Buffer {
   uint8_t* m_data;
   uint32_t m_capacity;
   uint32_t m_size;
-  uint32_t m_offset;
 
  public:
 
