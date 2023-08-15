@@ -15,10 +15,10 @@
 #include "config.h"
 
 static void encode_input_buffer(const cdm::InputBuffer_2& source, InputBuffer2::Builder* target) {
-  target->setData(kj::ArrayPtr<const uint8_t>(source.data, source.data_size));
+  target->setData(kj::arrayPtr(source.data, source.data_size));
   target->setEncryptionScheme(static_cast<uint32_t>(source.encryption_scheme));
-  target->setKeyId(kj::ArrayPtr<const uint8_t>(source.key_id, source.key_id_size));
-  target->setIv(kj::ArrayPtr<const uint8_t>(source.iv, source.iv_size));
+  target->setKeyId(kj::arrayPtr(source.key_id, source.key_id_size));
+  target->setIv(kj::arrayPtr(source.iv, source.iv_size));
   auto subsamples = target->initSubsamples(source.num_subsamples);
   for (uint32_t i = 0; i < source.num_subsamples; i++) {
     subsamples[i].setClearBytes (source.subsamples[i].clear_bytes);
@@ -58,7 +58,7 @@ public:
     KJ_DLOG(INFO, "SetServerCertificate", promise_id, server_certificate_data, server_certificate_data_size);
     auto request = m_cdm.setServerCertificateRequest();
     request.setPromiseId(promise_id);
-    request.setServerCertificateData(kj::ArrayPtr<const uint8_t>(server_certificate_data, server_certificate_data_size));
+    request.setServerCertificateData(kj::arrayPtr(server_certificate_data, server_certificate_data_size));
     request.send().wait(m_io.waitScope);
     KJ_DLOG(INFO, "exiting SetServerCertificate");
   }
@@ -128,7 +128,7 @@ public:
 
       auto buffer = m_host->Allocate(source.getBuffer().getSize());
       buffer->SetSize(source.getBuffer().getSize());
-      memcpy(buffer->Data(), (uint8_t*)m_decrypted_buffers + source.getBuffer().getOffset(), source.getBuffer().getSize());
+      memcpy(buffer->Data(), reinterpret_cast<uint8_t*>(m_decrypted_buffers) + source.getBuffer().getOffset(), source.getBuffer().getSize());
       decrypted_buffer->SetDecryptedBuffer(buffer);
 
       decrypted_buffer->SetTimestamp(source.getTimestamp());
@@ -156,7 +156,7 @@ public:
         req_coded_size.setWidth (video_decoder_config.coded_size.width);
         req_coded_size.setHeight(video_decoder_config.coded_size.height);
       }
-      req_video_decoder_config.setExtraData(kj::ArrayPtr<uint8_t>(video_decoder_config.extra_data, video_decoder_config.extra_data_size));
+      req_video_decoder_config.setExtraData(kj::arrayPtr(video_decoder_config.extra_data, video_decoder_config.extra_data_size));
       req_video_decoder_config.setEncryptionScheme(static_cast<uint32_t>(video_decoder_config.encryption_scheme));
     }
     auto response = request.send().wait(m_io.waitScope);
@@ -203,7 +203,7 @@ public:
 
       auto framebuffer = m_host->Allocate(source.getFrameBuffer().getSize());
       framebuffer->SetSize(source.getFrameBuffer().getSize());
-      memcpy(framebuffer->Data(), (uint8_t*)m_decrypted_buffers + source.getFrameBuffer().getOffset(), source.getFrameBuffer().getSize());
+      memcpy(framebuffer->Data(), reinterpret_cast<uint8_t*>(m_decrypted_buffers) + source.getFrameBuffer().getOffset(), source.getFrameBuffer().getSize());
       video_frame->SetFrameBuffer(framebuffer);
 
       video_frame->SetPlaneOffset(cdm::kYPlane, source.getKYPlaneOffset());

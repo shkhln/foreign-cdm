@@ -401,7 +401,7 @@ public:
       video_decoder_config.format            = static_cast<cdm::VideoFormat>(context.getParams().getVideoDecoderConfig().getFormat());
       video_decoder_config.coded_size.width  = context.getParams().getVideoDecoderConfig().getCodedSize().getWidth();
       video_decoder_config.coded_size.height = context.getParams().getVideoDecoderConfig().getCodedSize().getHeight();
-      kj::ArrayPtr extra_data                = context.getParams().getVideoDecoderConfig().getExtraData();
+      auto extra_data                        = context.getParams().getVideoDecoderConfig().getExtraData();
       video_decoder_config.extra_data        = const_cast<uint8_t*>(extra_data.begin()); // somehow this field is non-const
       video_decoder_config.extra_data_size   = extra_data.size();
       video_decoder_config.encryption_scheme = static_cast<cdm::EncryptionScheme>(context.getParams().getVideoDecoderConfig().getEncryptionScheme());
@@ -575,7 +575,7 @@ public:
     request.setHasAdditionalUsableKey(has_additional_usable_key);
     auto keys_info_builder = request.initKeysInfo(keys_info_count);
     for (uint32_t i = 0; i < keys_info_count; i++) {
-      keys_info_builder[i].setKeyId(kj::ArrayPtr(keys_info[i].key_id, keys_info[i].key_id_size));
+      keys_info_builder[i].setKeyId(kj::arrayPtr(keys_info[i].key_id, keys_info[i].key_id_size));
       keys_info_builder[i].setStatus(keys_info[i].status);
       keys_info_builder[i].setSystemCode(keys_info[i].system_code);
     }
