@@ -1,0 +1,6 @@
+[submodule "third_party/capnproto"]
+	path = third_party/capnproto
+	url = https://github.com/capnproto/capnproto.git
+[submodule "third_party/cdm"]
+	path = third_party/cdm
+	url = https://chromium.googlesource.com/chromium/cdm
