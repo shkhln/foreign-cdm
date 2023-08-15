@@ -700,6 +700,9 @@ public:
   }
 };
 
+#define X_STR_(x) #x
+#define X_STR(x) X_STR_(x)
+
 int main(int argc, char* argv[]) {
 
   kj::TopLevelProcessContext context(argv[0]);
@@ -714,11 +717,7 @@ int main(int argc, char* argv[]) {
   void* cdm = dlopen(cdm_path, RTLD_LAZY);
   KJ_ASSERT(cdm != nullptr);
 
-#define SS(X) #X
-#define S(X) SS(X)
-  init_cdm_mod_func = (InitializeCdmModuleFunc)dlsym(cdm, S(INITIALIZE_CDM_MODULE));
-#undef SS
-#undef S
+  init_cdm_mod_func = (InitializeCdmModuleFunc)dlsym(cdm, X_STR(INITIALIZE_CDM_MODULE));
   KJ_ASSERT(init_cdm_mod_func != nullptr);
 
   //~ deinit_cdm_mod_func = (DeinitializeCdmModuleFunc)dlsym(cdm, "DeinitializeCdmModule");
@@ -748,12 +747,13 @@ int main(int argc, char* argv[]) {
   class ErrorHandlerImpl: public kj::TaskSet::ErrorHandler {
   public:
     void taskFailed(kj::Exception&& exception) override {
-      throw exception; // ?
+      KJ_LOG(FATAL, exception);
+      exit(EXIT_FAILURE);
     }
   };
 
-  ErrorHandlerImpl errorHandler;
-  kj::TaskSet tasks(errorHandler);
+  ErrorHandlerImpl error_handler;
+  kj::TaskSet tasks(error_handler);
 
   tasks.add(server.drain().then([]() -> void {
     KJ_LOG(INFO, "exiting...");

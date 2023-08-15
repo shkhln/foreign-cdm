@@ -318,19 +318,15 @@ public:
     auto session_id                = context.getParams().getSessionId();
     auto has_additional_usable_key = context.getParams().getHasAdditionalUsableKey();
 
-    //TODO: get rid of malloc here
-    auto keys_info_count = context.getParams().getKeysInfo().size();
-    auto keys_info = new cdm::KeyInformation[keys_info_count];
-    for (uint32_t i = 0; i < keys_info_count; i++) {
+    auto keys_info = kj::heapArray<cdm::KeyInformation>(context.getParams().getKeysInfo().size());
+    for (uint32_t i = 0; i < keys_info.size(); i++) {
       keys_info[i].key_id      = context.getParams().getKeysInfo()[i].getKeyId().begin();
       keys_info[i].key_id_size = context.getParams().getKeysInfo()[i].getKeyId().size();
       keys_info[i].status      = static_cast<cdm::KeyStatus>(context.getParams().getKeysInfo()[i].getStatus());
       keys_info[i].system_code = context.getParams().getKeysInfo()[i].getSystemCode();
     }
 
-    m_host->OnSessionKeysChange(session_id.begin(), session_id.size(), has_additional_usable_key, keys_info, keys_info_count);
-
-    delete[] keys_info;
+    m_host->OnSessionKeysChange(session_id.begin(), session_id.size(), has_additional_usable_key, keys_info.begin(), keys_info.size());
 
     KJ_DLOG(INFO, "exiting onSessionKeysChange");
     return kj::READY_NOW;
