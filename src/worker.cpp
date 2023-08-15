@@ -371,7 +371,7 @@ public:
       XDecryptedBlock block;
       cdm::Status status = m_cdm->Decrypt(encrypted_buffer, static_cast<cdm::DecryptedBlock*>(&block));
 
-      delete encrypted_buffer.subsamples;
+      delete[] encrypted_buffer.subsamples;
 
       if (status == cdm::kSuccess) {
         auto target = context.getResults().getDecryptedBuffer();
@@ -449,7 +449,7 @@ public:
       XVideoFrame frame;
       cdm::Status status = m_cdm->DecryptAndDecodeFrame(encrypted_buffer, static_cast<cdm::VideoFrame*>(&frame));
 
-      delete encrypted_buffer.subsamples;
+      delete[] encrypted_buffer.subsamples;
 
       if (status == cdm::kSuccess) {
         auto target = context.getResults().getVideoFrame();
