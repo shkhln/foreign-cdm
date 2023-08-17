@@ -1,0 +1,4 @@
+/.*
+/build
+/src/cdm.capnp.h
+/src/cdm.capnp.c++
