@@ -13,20 +13,31 @@
 #include <cdm/content_decryption_module.h>
 #include "cdm.capnp.h"
 #include "config.h"
+#include "util.h"
 
-static void encode_input_buffer(const cdm::InputBuffer_2& source, InputBuffer2::Builder* target) {
-  target->setData(kj::arrayPtr(source.data, source.data_size));
-  target->setEncryptionScheme(static_cast<uint32_t>(source.encryption_scheme));
-  target->setKeyId(kj::arrayPtr(source.key_id, source.key_id_size));
-  target->setIv(kj::arrayPtr(source.iv, source.iv_size));
-  auto subsamples = target->initSubsamples(source.num_subsamples);
-  for (uint32_t i = 0; i < source.num_subsamples; i++) {
-    subsamples[i].setClearBytes (source.subsamples[i].clear_bytes);
-    subsamples[i].setCipherBytes(source.subsamples[i].cipher_bytes);
-  }
-  target->getPattern().setCryptByteBlock(source.pattern.crypt_byte_block);
-  target->getPattern().setSkipByteBlock(source.pattern.skip_byte_block);
-  target->setTimestamp(source.timestamp);
+static uint32_t write_input_buffer(const cdm::InputBuffer_2& source, XAlloc& allocator) {
+
+  auto data = allocator.allocate(source.data_size);
+  memcpy(data, source.data, source.data_size);
+
+  auto key_id = allocator.allocate(source.key_id_size);
+  memcpy(key_id, source.key_id, source.key_id_size);
+
+  auto iv = allocator.allocate(source.iv_size);
+  memcpy(iv, source.iv, source.iv_size);
+
+  auto subsamples = allocator.allocate(sizeof(cdm::SubsampleEntry) * source.num_subsamples);
+  memcpy(subsamples, source.subsamples, sizeof(cdm::SubsampleEntry) * source.num_subsamples);
+
+  auto input_buffer = reinterpret_cast<cdm::InputBuffer_2*>(allocator.allocate(sizeof(cdm::InputBuffer_2)));
+  memcpy(input_buffer, &source, sizeof(cdm::InputBuffer_2));
+
+  input_buffer->data       = reinterpret_cast<uint8_t*>(allocator.getOffset(data));
+  input_buffer->key_id     = reinterpret_cast<uint8_t*>(allocator.getOffset(key_id));
+  input_buffer->iv         = reinterpret_cast<uint8_t*>(allocator.getOffset(iv));
+  input_buffer->subsamples = reinterpret_cast<cdm::SubsampleEntry*>(allocator.getOffset(subsamples));
+
+  return allocator.getOffset(reinterpret_cast<uint8_t*>(input_buffer));
 }
 
 class CdmWrapper: public cdm::ContentDecryptionModule_10 {
@@ -36,6 +47,7 @@ class CdmWrapper: public cdm::ContentDecryptionModule_10 {
   kj::Own<capnp::TwoPartyClient>     m_client;
   CdmProxy::Client                   m_cdm;
   cdm::Host_10*                      m_host;
+  XAlloc                             m_allocator;
   void*                              m_decrypted_buffers;
 
 public:
@@ -116,11 +128,13 @@ public:
 
     auto request = m_cdm.decryptRequest();
 
-    auto req_buffer = request.getEncryptedBuffer();
-    encode_input_buffer(encrypted_buffer, &req_buffer);
+    uint32_t offset = write_input_buffer(encrypted_buffer, m_allocator);
+    request.setEncryptedBufferOffset(offset);
 
     auto response = request.send().wait(m_io.waitScope);
     auto status   = static_cast<cdm::Status>(response.getStatus());
+
+    m_allocator.forget();
 
     if (status == cdm::kSuccess) {
 
@@ -188,11 +202,13 @@ public:
 
     auto request = m_cdm.decryptAndDecodeFrameRequest();
 
-    auto req_buffer = request.getEncryptedBuffer();
-    encode_input_buffer(encrypted_buffer, &req_buffer);
+    uint32_t offset = write_input_buffer(encrypted_buffer, m_allocator);
+    request.setEncryptedBufferOffset(offset);
 
     auto response = request.send().wait(m_io.waitScope);
     auto status   = static_cast<cdm::Status>(response.getStatus());
+
+    m_allocator.forget();
 
     if (status == cdm::kSuccess) {
 
@@ -253,9 +269,9 @@ public:
   }
 
   CdmWrapper(kj::AsyncIoContext& io, kj::Own<kj::AsyncCapabilityStream> stream, kj::Own<capnp::TwoPartyClient> client,
-    CdmProxy::Client cdm, cdm::Host_10* host, void* decrypted_buffers) :
+    CdmProxy::Client cdm, cdm::Host_10* host, XAlloc allocator, void* decrypted_buffers) :
       m_io(io), m_stream(kj::mv(stream)), m_client(kj::mv(client)),
-        m_cdm(kj::mv(cdm)), m_host(host), m_decrypted_buffers(decrypted_buffers) {}
+        m_cdm(kj::mv(cdm)), m_host(host), m_allocator(kj::mv(allocator)), m_decrypted_buffers(decrypted_buffers) {}
 
   ~CdmWrapper() noexcept {
     //KJ_SYSCALL(munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE));
@@ -431,17 +447,20 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
 
   auto cdm = response.getCdmProxy();
 
-  void* p;
-  {
-    int memfd = KJ_ASSERT_NONNULL(cdm.getFd().wait(io.waitScope));
-    KJ_DEFER(KJ_SYSCALL(close(memfd)));
-    p = mmap(nullptr, SHMEM_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
-    if (p == MAP_FAILED) {
-      KJ_FAIL_SYSCALL("mmap", errno);
-    }
+  int memfd = KJ_ASSERT_NONNULL(cdm.getFd().wait(io.waitScope));
+  KJ_DEFER(KJ_SYSCALL(close(memfd)));
+
+  XAlloc allocator(memfd, SHMEM_ARENA_SIZE, 0);
+
+  long page_size;
+  KJ_SYSCALL(page_size = sysconf(_SC_PAGESIZE));
+
+  void* decrypted_buffers = mmap(nullptr, SHMEM_ARENA_SIZE, PROT_READ, MAP_SHARED, memfd, SHMEM_ARENA_SIZE + page_size);
+  if (decrypted_buffers == MAP_FAILED) {
+    KJ_FAIL_SYSCALL("mmap", errno);
   }
 
-  return reinterpret_cast<void*>(new CdmWrapper(io, kj::mv(stream), kj::mv(client), kj::mv(cdm), host, p));
+  return reinterpret_cast<void*>(new CdmWrapper(io, kj::mv(stream), kj::mv(client), kj::mv(cdm), host, kj::mv(allocator), decrypted_buffers));
 }
 
 //TODO: deal with code duplication

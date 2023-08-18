@@ -4,7 +4,7 @@ LINUX_CXXFLAGS ?= --sysroot=/compat/linux -std=c++17 -Wall -Wextra -Wno-unused-p
 
 all: build/fcdm-linux.so build/fcdm-worker # build/fcdm-fbsd.so
 
-build/fcdm-fbsd.so: src/config.h src/lib.cpp src/cdm.capnp.h build/capnp-fbsd
+build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
 	$(CC) $(CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
@@ -18,7 +18,7 @@ build/fcdm-fbsd.so: src/config.h src/lib.cpp src/cdm.capnp.h build/capnp-fbsd
  src/lib.cpp \
  -pthread && chmod -R o+rX build
 
-build/fcdm-linux.so: src/config.h src/lib.cpp src/cdm.capnp.h build/capnp-linux
+build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
 	$(LINUX_CC) $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
@@ -32,7 +32,7 @@ build/fcdm-linux.so: src/config.h src/lib.cpp src/cdm.capnp.h build/capnp-linux
  src/lib.cpp \
  -pthread -ldl && chmod -R o+rX build
 
-build/fcdm-worker: src/config.h src/worker.cpp src/cdm.capnp.h build/capnp-linux
+build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
 	$(LINUX_CC) $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -o $(.TARGET) \
  -Wl,--whole-archive \

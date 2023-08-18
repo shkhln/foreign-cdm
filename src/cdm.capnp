@@ -19,26 +19,6 @@ struct VideoDecoderConfig2 {
   encryptionScheme @5: UInt32;
 }
 
-struct SubsampleEntry {
-  clearBytes  @0: UInt32;
-  cipherBytes @1: UInt32;
-}
-
-struct Pattern {
-  cryptByteBlock @0: UInt32;
-  skipByteBlock  @1: UInt32;
-}
-
-struct InputBuffer2 {
-  data             @0: Data;
-  encryptionScheme @1: UInt32;
-  keyId            @2: Data;
-  iv               @3: Data;
-  subsamples       @4: List(SubsampleEntry);
-  pattern          @5: Pattern;
-  timestamp        @6: Int64;
-}
-
 struct Buffer {
   offset @0: UInt32;
   size   @1: UInt32;
@@ -78,12 +58,12 @@ interface CdmProxy {
   closeSession                    @  6 (promiseId: UInt32, sessionId: Text);
   removeSession                   @  7 (); # TODO
   timerExpired                    @  8 (context: UInt64);
-  decrypt                         @  9 (encryptedBuffer: InputBuffer2) -> (status: UInt32, decryptedBuffer: DecryptedBlock);
+  decrypt                         @  9 (encryptedBufferOffset: UInt32) -> (status: UInt32, decryptedBuffer: DecryptedBlock);
   initializeAudioDecoder          @ 10 (); # TODO
   initializeVideoDecoder          @ 11 (videoDecoderConfig: VideoDecoderConfig2) -> (status: UInt32);
   deinitializeDecoder             @ 12 (decoderType: UInt32);
   resetDecoder                    @ 13 (decoderType: UInt32);
-  decryptAndDecodeFrame           @ 14 (encryptedBuffer: InputBuffer2) -> (status: UInt32, videoFrame: VideoFrame);
+  decryptAndDecodeFrame           @ 14 (encryptedBufferOffset: UInt32) -> (status: UInt32, videoFrame: VideoFrame);
   decryptAndDecodeSamples         @ 15 (); # TODO
   onPlatformChallengeResponse     @ 16 (); # TODO
   onQueryOutputProtectionStatus   @ 17 (result: UInt32, linkMask: UInt32, outputProtectionMask: UInt32);

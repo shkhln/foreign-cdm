@@ -10,59 +10,7 @@
 #include <cdm/content_decryption_module.h>
 #include "cdm.capnp.h"
 #include "config.h"
-
-class XAlloc {
-
-  uint8_t* m_arena_start;
-  uint32_t m_arena_size;
-  uint8_t* m_position;
-
-public:
-
-  uint8_t* allocate(uint32_t nbytes) {
-    auto cur_pos = m_position;
-    auto new_pos = m_position + ((nbytes + 7) & ~7);
-    KJ_ASSERT(new_pos < m_arena_start + m_arena_size, "out of mem");
-    m_position = new_pos;
-    return cur_pos;
-  }
-
-  uint32_t getOffset(uint8_t* position) {
-    KJ_ASSERT(position >= m_arena_start && position < m_arena_start + m_arena_size, "out of bounds");
-    return reinterpret_cast<uintptr_t>(position) - reinterpret_cast<uintptr_t>(m_arena_start);
-  }
-
-  void forget() {
-    m_position = m_arena_start;
-  }
-
-  XAlloc(int fd, uint32_t arena_size) {
-    void* p = mmap(nullptr, arena_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (p == MAP_FAILED) {
-      KJ_FAIL_SYSCALL("mmap", errno);
-    }
-    m_arena_start = reinterpret_cast<uint8_t*>(p);
-    m_arena_size  = arena_size;
-    m_position    = m_arena_start;
-  }
-
-  ~XAlloc() {
-    if (m_arena_start != nullptr) {
-      KJ_SYSCALL(munmap(m_arena_start, m_arena_size));
-    }
-  }
-
-  XAlloc(XAlloc&& other) :
-    m_arena_start(other.m_arena_start),
-    m_arena_size (other.m_arena_size),
-    m_position   (other.m_position)
-  {
-    other.m_arena_start = nullptr;
-    other.m_arena_size  = 0;
-  }
-
-  KJ_DISALLOW_COPY(XAlloc);
-};
+#include "util.h"
 
 class XBuffer: public cdm::Buffer {
 
@@ -215,38 +163,17 @@ public:
   ~XVideoFrame() {}
 };
 
-static void decode_input_buffer(const InputBuffer2::Reader& source, cdm::InputBuffer_2* target) {
+static cdm::InputBuffer_2* get_input_buffer_and_fix_pointers(uint8_t* shared_mem_start, uint32_t offset) {
 
-  auto data = source.getData();
-  target->data      = data.begin();
-  target->data_size = data.size();
+  auto buffer = reinterpret_cast<cdm::InputBuffer_2*>(reinterpret_cast<uint8_t*>(shared_mem_start) + offset);
 
-  target->encryption_scheme = static_cast<cdm::EncryptionScheme>(source.getEncryptionScheme());
+  buffer->data       = shared_mem_start + reinterpret_cast<uintptr_t>(buffer->data);
+  buffer->key_id     = shared_mem_start + reinterpret_cast<uintptr_t>(buffer->key_id);
+  buffer->iv         = shared_mem_start + reinterpret_cast<uintptr_t>(buffer->iv);
+  buffer->subsamples = reinterpret_cast<cdm::SubsampleEntry*>(
+    shared_mem_start + reinterpret_cast<uintptr_t>(buffer->subsamples));
 
-  auto key_id = source.getKeyId();
-  target->key_id      = key_id.begin();
-  target->key_id_size = key_id.size();
-
-  auto iv = source.getIv();
-  target->iv      = iv.begin();
-  target->iv_size = iv.size();
-
-  //TODO: get rid of malloc here
-  auto num_subsamples = source.getSubsamples().size();
-  auto subsamples     = new cdm::SubsampleEntry[num_subsamples];
-  for (uint32_t i = 0; i < num_subsamples; i++) {
-    subsamples[i].clear_bytes  = source.getSubsamples()[i].getClearBytes();
-    subsamples[i].cipher_bytes = source.getSubsamples()[i].getCipherBytes();
-  }
-  target->num_subsamples = num_subsamples;
-  target->subsamples     = subsamples;
-
-  target->pattern = cdm::Pattern {
-    .crypt_byte_block = source.getPattern().getCryptByteBlock(),
-    .skip_byte_block  = source.getPattern().getSkipByteBlock()
-  };
-
-  target->timestamp = source.getTimestamp();
+  return buffer;
 }
 
 struct HostContext {
@@ -275,6 +202,7 @@ class CdmProxyImpl final: public CdmProxy::Server {
   cdm::ContentDecryptionModule_10* m_cdm;
   kj::AutoCloseFd m_memfd;
   XAlloc m_allocator;
+  void* m_encrypted_buffers;
 
 public:
 
@@ -362,15 +290,13 @@ public:
       KJ_DLOG(INFO, "decrypt");
       set_host_context(&scope, &m_allocator);
 
-      cdm::InputBuffer_2 encrypted_buffer;
-      decode_input_buffer(context.getParams().getEncryptedBuffer(), &encrypted_buffer);
+      auto encrypted_buffer = get_input_buffer_and_fix_pointers(
+        reinterpret_cast<uint8_t*>(m_encrypted_buffers), context.getParams().getEncryptedBufferOffset());
 
       m_allocator.forget();
 
       XDecryptedBlock block;
-      cdm::Status status = m_cdm->Decrypt(encrypted_buffer, static_cast<cdm::DecryptedBlock*>(&block));
-
-      delete[] encrypted_buffer.subsamples;
+      cdm::Status status = m_cdm->Decrypt(*encrypted_buffer, static_cast<cdm::DecryptedBlock*>(&block));
 
       if (status == cdm::kSuccess) {
         auto target = context.getResults().getDecryptedBuffer();
@@ -440,15 +366,13 @@ public:
       KJ_DLOG(INFO, "decryptAndDecodeFrame");
       set_host_context(&scope, &m_allocator);
 
-      cdm::InputBuffer_2 encrypted_buffer;
-      decode_input_buffer(context.getParams().getEncryptedBuffer(), &encrypted_buffer);
+      auto encrypted_buffer = get_input_buffer_and_fix_pointers(
+        reinterpret_cast<uint8_t*>(m_encrypted_buffers), context.getParams().getEncryptedBufferOffset());
 
       m_allocator.forget();
 
       XVideoFrame frame;
-      cdm::Status status = m_cdm->DecryptAndDecodeFrame(encrypted_buffer, static_cast<cdm::VideoFrame*>(&frame));
-
-      delete[] encrypted_buffer.subsamples;
+      cdm::Status status = m_cdm->DecryptAndDecodeFrame(*encrypted_buffer, static_cast<cdm::VideoFrame*>(&frame));
 
       if (status == cdm::kSuccess) {
         auto target = context.getResults().getVideoFrame();
@@ -492,8 +416,8 @@ public:
     });
   }
 
-  CdmProxyImpl(cdm::ContentDecryptionModule_10* cdm, kj::AutoCloseFd memfd, XAlloc allocator) :
-    m_cdm(cdm), m_memfd(kj::mv(memfd)), m_allocator(kj::mv(allocator)) {}
+  CdmProxyImpl(cdm::ContentDecryptionModule_10* cdm, kj::AutoCloseFd memfd, XAlloc allocator, void* encrypted_buffers) :
+    m_cdm(cdm), m_memfd(kj::mv(memfd)), m_allocator(kj::mv(allocator)), m_encrypted_buffers(encrypted_buffers) {}
 
   ~CdmProxyImpl() {}
 };
@@ -675,10 +599,18 @@ public:
       KJ_SYSCALL(fd = syscall(SYS_memfd_create, "decrypted buffers", 0));
       kj::AutoCloseFd memfd(fd);
 
-      KJ_SYSCALL(ftruncate(memfd.get(), SHMEM_ARENA_SIZE));
+      long page_size;
+      KJ_SYSCALL(page_size = sysconf(_SC_PAGESIZE));
+      // encrypted buffers + decrypted buffers + 1 page
+      KJ_SYSCALL(ftruncate(memfd.get(), SHMEM_ARENA_SIZE * 2 + page_size));
       //TODO: seal memfd?
 
-      XAlloc allocator(memfd.get(), SHMEM_ARENA_SIZE);
+      void* encrypted_buffers = mmap(nullptr, SHMEM_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
+      if (encrypted_buffers == MAP_FAILED) {
+        KJ_FAIL_SYSCALL("mmap", errno);
+      }
+
+      XAlloc allocator(memfd.get(), SHMEM_ARENA_SIZE, SHMEM_ARENA_SIZE + page_size);
 
       //TODO: somebody is supposed to dispose of the host object
       void* host = reinterpret_cast<void*>(new HostWrapper(kj::mv(host_proxy)));
@@ -688,7 +620,7 @@ public:
       clear_host_context();
       KJ_ASSERT(cdm != nullptr);
 
-      context.getResults().setCdmProxy(kj::heap<CdmProxyImpl>(reinterpret_cast<cdm::ContentDecryptionModule_10*>(cdm), kj::mv(memfd), kj::mv(allocator)));
+      context.getResults().setCdmProxy(kj::heap<CdmProxyImpl>(reinterpret_cast<cdm::ContentDecryptionModule_10*>(cdm), kj::mv(memfd), kj::mv(allocator), encrypted_buffers));
 
       KJ_DLOG(INFO, "exiting createCdmInstance");
     });
