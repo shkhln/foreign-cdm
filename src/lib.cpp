@@ -478,16 +478,17 @@ CDM_API const char* GetCdmVersion() {
 
   KJ_DLOG(INFO, "GetCdmVersion");
 
-  int sockets[2];
-  if (!spawn_worker(sockets)) {
-    return nullptr;
-  }
-
-  KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
-  KJ_DEFER(KJ_SYSCALL(close(sockets[1])));
-
   static thread_local char* version = nullptr;
   if (version == nullptr) {
+
+    int sockets[2];
+    if (!spawn_worker(sockets)) {
+      return nullptr;
+    }
+
+    KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
+    KJ_DEFER(KJ_SYSCALL(close(sockets[1])));
+
     auto stream = io.lowLevelProvider->wrapUnixSocketFd(sockets[0]);
     capnp::TwoPartyClient client(*stream, 1 /* maxFdsPerMessage */);
 
