@@ -391,24 +391,21 @@ CDM_API void DeinitializeCdmModule() {
   // do nothing
 }
 
-CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_system, uint32_t key_system_size, GetCdmHostFunc get_cdm_host_func, void* user_data) {
+static bool spawn_worker(int sockets[2]) {
 
-  KJ_DLOG(INFO, "CreateCdmInstance", cdm_interface_version, key_system, key_system_size, reinterpret_cast<void*>(get_cdm_host_func), user_data);
-
-  int sockets[2];
   KJ_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets));
   KJ_SYSCALL(fcntl(sockets[0], F_SETFD, FD_CLOEXEC));
-
-  char socket_fd_str[11];
-  snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
 
   char* worker_path = getenv("FCDM_WORKER_PATH");
   if (worker_path == nullptr) {
     KJ_LOG(FATAL, "FCDM_WORKER_PATH is not set");
     KJ_SYSCALL(close(sockets[0]));
     KJ_SYSCALL(close(sockets[1]));
-    return nullptr;
+    return false;
   }
+
+  char socket_fd_str[11];
+  snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
 
   const char* const args[] = {
     worker_path,
@@ -426,9 +423,23 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
     KJ_LOG(FATAL, "unable to start worker process", strerror(errno));
     KJ_SYSCALL(close(sockets[0]));
     KJ_SYSCALL(close(sockets[1]));
+    return false;
+  }
+
+  return true;
+}
+
+//TODO: is it safe to throw exceptions here?
+CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_system, uint32_t key_system_size, GetCdmHostFunc get_cdm_host_func, void* user_data) {
+
+  KJ_DLOG(INFO, "CreateCdmInstance", cdm_interface_version, key_system, key_system_size, reinterpret_cast<void*>(get_cdm_host_func), user_data);
+
+  int sockets[2];
+  if (!spawn_worker(sockets)) {
     return nullptr;
   }
 
+  //TODO: who is supposed to close sockets[0]?
   KJ_SYSCALL(close(sockets[1]));
 
   auto stream = io.lowLevelProvider->wrapUnixSocketFd(sockets[0]);
@@ -463,44 +474,17 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
   return reinterpret_cast<void*>(new CdmWrapper(io, kj::mv(stream), kj::mv(client), kj::mv(cdm), host, kj::mv(allocator), decrypted_buffers));
 }
 
-//TODO: deal with code duplication
 CDM_API const char* GetCdmVersion() {
 
   KJ_DLOG(INFO, "GetCdmVersion");
 
   int sockets[2];
-  KJ_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets));
-  KJ_SYSCALL(fcntl(sockets[0], F_SETFD, FD_CLOEXEC));
-
-  char socket_fd_str[11];
-  snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
-
-  char* worker_path = getenv("FCDM_WORKER_PATH");
-  if (worker_path == nullptr) {
-    KJ_LOG(FATAL, "FCDM_WORKER_PATH is not set");
-    KJ_SYSCALL(close(sockets[0]));
-    KJ_SYSCALL(close(sockets[1]));
+  if (!spawn_worker(sockets)) {
     return nullptr;
   }
 
-  const char* const args[] = {
-    worker_path,
-    socket_fd_str,
-    nullptr
-  };
-
-  extern char** environ;
-
-  pid_t pid = 0;
-  int err = posix_spawnp(&pid, worker_path, nullptr, nullptr, (char* const*)args, environ);
-  if (err == 0) {
-    KJ_LOG(INFO, "started worker process", pid);
-  } else {
-    KJ_LOG(FATAL, "unable to start worker process", strerror(errno));
-    KJ_SYSCALL(close(sockets[0]));
-    KJ_SYSCALL(close(sockets[1]));
-    return nullptr;
-  }
+  KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
+  KJ_DEFER(KJ_SYSCALL(close(sockets[1])));
 
   static thread_local char* version = nullptr;
   if (version == nullptr) {
@@ -514,9 +498,6 @@ CDM_API const char* GetCdmVersion() {
     version = strdup(response.getVersion().cStr());
   }
   KJ_LOG(INFO, version);
-
-  KJ_SYSCALL(close(sockets[0]));
-  KJ_SYSCALL(close(sockets[1]));
 
   return version;
 }
