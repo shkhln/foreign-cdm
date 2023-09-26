@@ -1,8 +1,9 @@
 
 LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-9/root/usr/bin/g++
 LINUX_CXXFLAGS ?= --sysroot=/compat/linux -std=c++17 -Wall -Wextra -Wno-unused-parameter # TODO: remove -Wno-unused-parameter
+MAKE_JOBS_NUMBER ?= 1
 
-all: build/fcdm-linux.so build/fcdm-worker # build/fcdm-fbsd.so
+all: build/fcdm-fbsd.so build/fcdm-worker # build/fcdm-fbsd.so
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
@@ -46,18 +47,18 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
  src/worker.cpp \
  -pthread -ldl && chmod -R o+rX build
 
-src/cdm.capnp.h: src/cdm.capnp build/capnp-linux
-	./build/capnp-linux/c++/src/capnp/capnp compile -obuild/capnp-linux/c++/src/capnp/capnpc-c++ src/cdm.capnp
+src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
+	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-linux/c++/src/capnp/capnpc-c++ src/cdm.capnp
 
 build/capnp-fbsd:
 	mkdir -p build/capnp-fbsd
-	env CXXFLAGS="$(CXXFLAGS) -include 'netinet/in.h' -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=OFF
-	make -C build/capnp-fbsd
+	env CXXFLAGS="$(CXXFLAGS) -include 'netinet/in.h' -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=OFF -DBUILD_TESTING=OFF
+	make -C build/capnp-fbsd -j${MAKE_JOBS_NUMBER}
 
 build/capnp-linux:
 	mkdir -p build/capnp-linux
-	env CXX="$(LINUX_CC)" CXXFLAGS="$(LINUX_CXXFLAGS) -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON
-	make -C build/capnp-linux
+	env CXX="$(LINUX_CC)" CXXFLAGS="$(LINUX_CXXFLAGS) -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON -DBUILD_TESTING=OFF
+	make -C build/capnp-linux -j${MAKE_JOBS_NUMBER}
 
 clean:
 	rm -f src/cdm.capnp.h
