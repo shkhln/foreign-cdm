@@ -524,9 +524,9 @@ CDM_API void DeinitializeCdmModule() {
 
 static pid_t spawn_worker(int sockets[2]) {
 
-  char* worker_path = getenv("FCDM_WORKER_PATH");
-  if (worker_path == nullptr) {
-    KJ_LOG(FATAL, "FCDM_WORKER_PATH is not set");
+  char* bindir_path = getenv("FCDM_BINDIR_PATH");
+  if (bindir_path == nullptr) {
+    KJ_LOG(FATAL, "FCDM_BINDIR_PATH is not set");
     return -1;
   }
 
@@ -536,21 +536,32 @@ static pid_t spawn_worker(int sockets[2]) {
   char socket_fd_str[11];
   snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
 
+#ifndef DISABLE_FCDM_JAIL
+  auto process_path = kj::str(bindir_path, "/fcdm-jail");
   const char* const args[] = {
-    worker_path,
+    "fcdm-jail",
     socket_fd_str,
     nullptr
   };
+  KJ_SYSCALL(setenv("FCDM_WORKER_PATH", kj::str(bindir_path, "/fcdm-worker").cStr(), 1));
+#else
+  auto process_path = kj::str(bindir_path, "/fcdm-worker");
+  const char* const args[] = {
+    "fcdm-worker",
+    socket_fd_str,
+    nullptr
+  };
+#endif
 
   extern char** environ;
 
-  pid_t pid = 0;
-  int err = posix_spawnp(&pid, worker_path, nullptr, nullptr, (char* const*)args, environ);
+  pid_t pid;
+  int err = posix_spawn(&pid, process_path.cStr(), nullptr, nullptr, const_cast<char* const*>(args), environ);
   if (err == 0) {
-    KJ_LOG(INFO, "started worker process", pid);
+    KJ_LOG(INFO, "started process", pid);
     return pid;
   } else {
-    KJ_LOG(FATAL, "unable to start worker process", strerror(errno));
+    KJ_LOG(FATAL, "unable to start", process_path, strerror(errno));
     KJ_SYSCALL(close(sockets[0]));
     KJ_SYSCALL(close(sockets[1]));
     return -1;

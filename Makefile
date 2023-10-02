@@ -1,9 +1,10 @@
 
 LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-9/root/usr/bin/g++
-LINUX_CXXFLAGS ?= --sysroot=/compat/linux -std=c++17 -Wall -Wextra -Wno-unused-parameter # TODO: remove -Wno-unused-parameter
+LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O2 -std=c++17 --sysroot=/compat/linux
+CFLAGS         += -Wall -Wextra -Wno-unused-parameter
 MAKE_JOBS_NUMBER ?= 1
 
-all: build/fcdm-fbsd.so build/fcdm-worker # build/fcdm-fbsd.so
+all: build/fcdm-fbsd.so build/fcdm-worker build/fcdm-jail
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
@@ -17,7 +18,7 @@ build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/ca
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/lib.cpp \
- -pthread && chmod -R o+rX build
+ -pthread && chmod a+rX $(.TARGET)
 
 build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
@@ -31,7 +32,7 @@ build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/c
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/lib.cpp \
- -pthread -ldl && chmod -R o+rX build
+ -pthread -ldl && chmod a+rX $(.TARGET)
 
 build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
@@ -45,7 +46,11 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/worker.cpp \
- -pthread -ldl && chmod -R o+rX build
+ -pthread -ldl && chmod a+rX $(.TARGET)
+
+build/fcdm-jail: src/config.h src/jail.c
+	mkdir -p build
+	$(CC) $(CFLAGS) -ljail -lutil -o $(.TARGET) src/jail.c && chmod a+srX $(.TARGET)
 
 src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
 	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-fbsd/c++/src/capnp/capnpc-c++ src/cdm.capnp
