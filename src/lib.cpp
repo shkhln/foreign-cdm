@@ -545,7 +545,23 @@ static pid_t spawn_worker(int sockets[2]) {
   extern char** environ;
 
   pid_t pid = 0;
-  int err = posix_spawnp(&pid, worker_path, nullptr, nullptr, (char* const*)args, environ);
+
+  int last_sep_pos = 0;
+  for (int i = strlen(worker_path); i >= 0; i--) {
+    if (worker_path[i] == '/') {
+      last_sep_pos = i;
+      break;
+    }
+  }
+
+  char* jail_wrapper_path = strdup(worker_path);
+  KJ_ASSERT(strcmp(&jail_wrapper_path[last_sep_pos + 1], "fcdm-worker") == 0);
+  snprintf(&jail_wrapper_path[last_sep_pos + 1], sizeof("fcdm-worker"), "fcdm-jail");
+
+  int err = posix_spawn(&pid, jail_wrapper_path, nullptr, nullptr, (char* const*)args, environ);
+
+  free(jail_wrapper_path);
+
   if (err == 0) {
     KJ_LOG(INFO, "started worker process", pid);
     return pid;
