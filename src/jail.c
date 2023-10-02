@@ -89,14 +89,24 @@ int main(int argc, char* argv[]) {
 
   assert(geteuid() == UID_ROOT);
 
-  char* home_path = getenv("HOME");
+  char* home_path   = getenv("HOME");
+  char* libcdm_path = getenv("FCDM_CDM_SO_PATH");
+  char* worker_path = getenv("FCDM_WORKER_PATH");
 
   if (home_path == NULL) {
     errx(EXIT_FAILURE, "HOME is undefined");
   }
 
-  if (access(home_path, R_OK | X_OK) == -1) {
+  if (access(home_path, R_OK | W_OK | X_OK) == -1) {
     err(EXIT_FAILURE, "can't access %s", home_path);
+  }
+
+  if (libcdm_path != NULL && access(libcdm_path, R_OK | X_OK) == -1) {
+    err(EXIT_FAILURE, "can't access %s", libcdm_path);
+  }
+
+  if (worker_path != NULL && access(worker_path, R_OK | X_OK) == -1) {
+    err(EXIT_FAILURE, "can't access %s", worker_path);
   }
 
   if (chdir(home_path) == -1) {
@@ -133,20 +143,12 @@ int main(int argc, char* argv[]) {
       wmount("linsysfs",  "linsysfs",            "sys",   0);
       wmount("nullfs",    "/compat/linux/usr",   "usr",   MNT_RDONLY | MNT_NOSUID);
 
-      char* libcdm_path = getenv("FCDM_CDM_SO_PATH");
       if (libcdm_path != NULL) {
-        if (access(libcdm_path, R_OK | X_OK) == -1) {
-          err(EXIT_FAILURE, "can't access %s", libcdm_path);
-        }
         touch("opt/libcdm.so", 0555);
         wmount("nullfs", libcdm_path, "opt/libcdm.so", MNT_RDONLY | MNT_NOSUID);
       }
 
-      char* worker_path = getenv("FCDM_WORKER_PATH");
       if (worker_path != NULL) {
-        if (access(worker_path, R_OK | X_OK) == -1) {
-          err(EXIT_FAILURE, "can't access %s", worker_path);
-        }
         touch("opt/fcdm-worker", 0555);
         wmount("nullfs", worker_path, "opt/fcdm-worker", MNT_RDONLY | MNT_NOSUID);
       }

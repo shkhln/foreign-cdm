@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     errx(EXIT_FAILURE, "HOME is undefined");
   }
 
-  if (access(home_path, R_OK | X_OK) == -1) {
+  if (access(home_path, R_OK | W_OK | X_OK) == -1) {
     err(EXIT_FAILURE, "can't access %s", home_path);
   }
 
