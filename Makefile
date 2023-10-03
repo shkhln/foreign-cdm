@@ -48,7 +48,7 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
  -pthread -ldl && chmod -R o+rX build
 
 src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
-	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-linux/c++/src/capnp/capnpc-c++ src/cdm.capnp
+	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-fbsd/c++/src/capnp/capnpc-c++ src/cdm.capnp
 
 build/capnp-fbsd:
 	mkdir -p build/capnp-fbsd
