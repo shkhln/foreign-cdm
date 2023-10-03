@@ -16,11 +16,11 @@
 #include <jail.h>
 #include "config.h"
 
-#define ULL_HI_MASK ((unsigned long long)-1 & ~(-1))
+#define ULL_HI_MASK ((unsigned long long)-1 ^ (unsigned int)-1)
 
 static bool wmount(const char* fstype, const char* from, const char* to, unsigned long long flags) {
 
-  assert(((flags & ULL_HI_MASK) & MNT_NOCOVER) == (flags & ULL_HI_MASK));
+  assert(((flags & ULL_HI_MASK) & ~MNT_NOCOVER) == 0);
 
   char errmsg[255];
   errmsg[0] = '\0';
