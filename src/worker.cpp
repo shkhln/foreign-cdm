@@ -478,7 +478,14 @@ public:
   }
 
   void OnRejectPromise(uint32_t promise_id, cdm::Exception exception, uint32_t system_code, const char* error_message, uint32_t error_message_size) override {
-    KJ_UNIMPLEMENTED("OnRejectPromise");
+    KJ_DLOG(INFO, "OnRejectPromise", promise_id, exception, system_code, error_message, error_message_size);
+    auto request = m_host.onRejectPromiseRequest();
+    request.setPromiseId(promise_id);
+    request.setException(exception);
+    request.setSystemCode(system_code);
+    request.setErrorMessage(kj::StringPtr(error_message, error_message_size));
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting OnRejectPromise");
   }
 
   void OnSessionMessage(const char* session_id, uint32_t session_id_size, cdm::MessageType message_type, const char* message, uint32_t message_size) override {

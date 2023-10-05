@@ -318,6 +318,17 @@ public:
     return kj::READY_NOW;
   }
 
+  kj::Promise<void> onRejectPromise(OnRejectPromiseContext context) override {
+    KJ_DLOG(INFO, "onRejectPromise");
+    auto promise_id    = context.getParams().getPromiseId();
+    auto exception     = context.getParams().getException();
+    auto system_code   = context.getParams().getSystemCode();
+    auto error_message = context.getParams().getErrorMessage();
+    m_host->OnRejectPromise(promise_id, static_cast<cdm::Exception>(exception), system_code, error_message.begin(), error_message.size());
+    KJ_DLOG(INFO, "exiting onRejectPromise");
+    return kj::READY_NOW;
+  }
+
   kj::Promise<void> onSessionMessage(OnSessionMessageContext context) override {
     KJ_DLOG(INFO, "onSessionMessage");
     auto session_id   = context.getParams().getSessionId();

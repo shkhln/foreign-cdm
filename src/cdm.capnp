@@ -76,7 +76,7 @@ interface HostProxy {
   onResolveKeyStatusPromise    @  2 (); # TODO
   onResolveNewSessionPromise   @  3 (promiseId: UInt32, sessionId: Text);
   onResolvePromise             @  4 (promiseId: UInt32);
-  onRejectPromise              @  5 (); # TODO
+  onRejectPromise              @  5 (promiseId: UInt32, exception: UInt32, systemCode: UInt32, errorMessage: Text);
   onSessionMessage             @  6 (sessionId: Text, messageType: UInt32, message: Text);
   onSessionKeysChange          @  7 (sessionId: Text, hasAdditionalUsableKey: Bool, keysInfo: List(KeyInformation));
   onExpirationChange           @  8 (sessionId: Text, newExpiryTime: Float64);
