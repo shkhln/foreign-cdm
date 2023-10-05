@@ -283,6 +283,85 @@ public:
   }
 };
 
+static thread_local kj::AsyncIoContext io = kj::setupAsyncIo();
+
+class FileIOProxyImpl final: public FileIOProxy::Server {
+
+  cdm::FileIO* m_file_io;
+
+public:
+
+  kj::Promise<void> open(OpenContext context) override {
+    KJ_DLOG(INFO, "open");
+    auto file_name = context.getParams().getFileName();
+    m_file_io->Open(file_name.begin(), file_name.size());
+    KJ_DLOG(INFO, "exiting open");
+    return kj::READY_NOW;
+  }
+
+  kj::Promise<void> read(ReadContext context) override {
+    KJ_DLOG(INFO, "read");
+    m_file_io->Read();
+    KJ_DLOG(INFO, "exiting read");
+    return kj::READY_NOW;
+  }
+
+  kj::Promise<void> write(WriteContext context) override {
+    KJ_DLOG(INFO, "write");
+    auto data = context.getParams().getData();
+    m_file_io->Write(data.begin(), data.size());
+    KJ_DLOG(INFO, "exiting write");
+    return kj::READY_NOW;
+  }
+
+  kj::Promise<void> close(CloseContext context) override {
+    KJ_DLOG(INFO, "close");
+    m_file_io->Close();
+    KJ_DLOG(INFO, "exiting close");
+    return kj::READY_NOW;
+  }
+
+  FileIOProxyImpl(cdm::FileIO* io) : m_file_io(io) {}
+};
+
+class FileIOClientWrapper: public cdm::FileIOClient {
+
+  FileIOClientProxy::Client m_client;
+
+public:
+
+  void OnOpenComplete(cdm::FileIOClient::Status status) override {
+    KJ_DLOG(INFO, "OnOpenComplete", static_cast<uint32_t>(status));
+    auto request = m_client.onOpenCompleteRequest();
+    request.setStatus(static_cast<uint32_t>(status));
+    request.send().wait(io.waitScope);
+    KJ_DLOG(INFO, "exiting OnOpenComplete");
+  }
+
+  void OnReadComplete(cdm::FileIOClient::Status status, const uint8_t* data, uint32_t data_size) override {
+    KJ_DLOG(INFO, "OnReadComplete", static_cast<uint32_t>(status));
+    auto request = m_client.onReadCompleteRequest();
+    request.setStatus(static_cast<uint32_t>(status));
+    request.setData(kj::arrayPtr(data, data_size));
+    request.send().wait(io.waitScope);
+    KJ_DLOG(INFO, "exiting OnReadComplete");
+  }
+
+  void OnWriteComplete(cdm::FileIOClient::Status status) override {
+    KJ_DLOG(INFO, "OnWriteComplete", static_cast<uint32_t>(status));
+    auto request = m_client.onWriteCompleteRequest();
+    request.setStatus(static_cast<uint32_t>(status));
+    request.send().wait(io.waitScope);
+    KJ_DLOG(INFO, "exiting OnWriteComplete");
+  }
+
+  FileIOClientWrapper(FileIOClientProxy::Client&& client) : m_client(client) {}
+
+  ~FileIOClientWrapper() noexcept {
+    KJ_ASSERT(0);
+  }
+};
+
 class HostProxyImpl final: public HostProxy::Server {
 
   cdm::Host_10* m_host;
@@ -388,6 +467,18 @@ public:
     return kj::READY_NOW;
   }
 
+  //TODO: who is supposed to dispose of the FileIO object?
+  kj::Promise<void> createFileIO(CreateFileIOContext context) override {
+    KJ_DLOG(INFO, "createFileIO");
+    auto file_io_client = context.getParams().getClient();
+    auto file_io = m_host->CreateFileIO(new FileIOClientWrapper(kj::mv(file_io_client)));
+    if (file_io != nullptr) {
+      context.getResults().setFileIO(kj::heap<FileIOProxyImpl>(file_io));
+    }
+    KJ_DLOG(INFO, "exiting createFileIO");
+    return kj::READY_NOW;
+  }
+
   kj::Promise<void> requestStorageId(RequestStorageIdContext context) override {
     KJ_DLOG(INFO, "requestStorageId");
     auto version = context.getParams().getVersion();
@@ -404,8 +495,6 @@ static void init() {
   kj::TopLevelProcessContext context("");
   context.increaseLoggingVerbosity();
 }
-
-static thread_local kj::AsyncIoContext io = kj::setupAsyncIo();
 
 CDM_API void INITIALIZE_CDM_MODULE() {
   // do nothing

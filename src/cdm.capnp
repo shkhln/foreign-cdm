@@ -70,6 +70,19 @@ interface CdmProxy {
   onStorageId                     @ 18 (version: UInt32, storageId: Data);
 }
 
+interface FileIOProxy {
+  open  @0 (fileName: Text);
+  read  @1 ();
+  write @2 (data: Data);
+  close @3 ();
+}
+
+interface FileIOClientProxy {
+  onOpenComplete  @0 (status: UInt32);
+  onReadComplete  @1 (status: UInt32, data: Data);
+  onWriteComplete @2 (status: UInt32);
+}
+
 interface HostProxy {
   setTimer                     @  0 (delayMs: Int64, context: UInt64);
   onInitialized                @  1 (success: Bool);
@@ -85,6 +98,6 @@ interface HostProxy {
   enableOutputProtection       @ 11 (); # TODO
   queryOutputProtectionStatus  @ 12 ();
   onDeferredInitializationDone @ 13 (); # TODO
-  createFileIO                 @ 14 (); # TODO
+  createFileIO                 @ 14 (client: FileIOClientProxy) -> (fileIO: FileIOProxy);
   requestStorageId             @ 15 (version: UInt32);
 }

@@ -192,7 +192,7 @@ static void set_host_context(kj::WaitScope* scope, XAlloc* arena) {
 
 static void clear_host_context() {
   KJ_ASSERT(host_ctx.scope != nullptr);
-  KJ_ASSERT(host_ctx.arena != nullptr);
+  //~ KJ_ASSERT(host_ctx.arena != nullptr);
   host_ctx.scope = nullptr;
   host_ctx.arena = nullptr;
 }
@@ -434,6 +434,92 @@ public:
   ~CdmProxyImpl() {}
 };
 
+class FileIOWrapper: public cdm::FileIO {
+
+  FileIOProxy::Client m_file_io;
+
+public:
+
+  void Open(const char* file_name, uint32_t file_name_size) override {
+    KJ_DLOG(INFO, "Open", file_name, file_name_size);
+    auto request = m_file_io.openRequest();
+    request.setFileName(kj::StringPtr(file_name, file_name_size));
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting Open");
+  }
+
+  void Read() override {
+    KJ_DLOG(INFO, "Read");
+    auto request = m_file_io.readRequest();
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting Read");
+  }
+
+  void Write(const uint8_t* data, uint32_t data_size) override {
+    KJ_DLOG(INFO, "Write", data, data_size);
+    auto request = m_file_io.writeRequest();
+    request.setData(kj::arrayPtr(data, data_size));
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting Write");
+  }
+
+  void Close() override {
+    KJ_DLOG(INFO, "Close");
+    auto request = m_file_io.closeRequest();
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting Close");
+  }
+
+  FileIOWrapper(FileIOProxy::Client&& io) : m_file_io(io) {}
+
+  ~FileIOWrapper() noexcept {
+    KJ_ASSERT(0);
+  }
+};
+
+class FileIOClientProxyImpl final: public FileIOClientProxy::Server {
+
+  cdm::FileIOClient* m_client;
+
+public:
+
+  kj::Promise<void> onOpenComplete(OnOpenCompleteContext context) override {
+    return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
+      KJ_DLOG(INFO, "onOpenComplete");
+      set_host_context(&scope, nullptr);
+      auto status = context.getParams().getStatus();
+      m_client->OnOpenComplete(static_cast<cdm::FileIOClient::Status>(status));
+      clear_host_context();
+      KJ_DLOG(INFO, "exiting onOpenComplete");
+    });
+  }
+
+  kj::Promise<void> onReadComplete(OnReadCompleteContext context) override {
+    return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
+      KJ_DLOG(INFO, "onReadComplete");
+      set_host_context(&scope, nullptr);
+      auto status = context.getParams().getStatus();
+      auto data   = context.getParams().getData();
+      m_client->OnReadComplete(static_cast<cdm::FileIOClient::Status>(status), data.begin(), data.size());
+      clear_host_context();
+      KJ_DLOG(INFO, "exiting onReadComplete");
+    });
+  }
+
+  kj::Promise<void> onWriteComplete(OnWriteCompleteContext context) override {
+    return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
+      KJ_DLOG(INFO, "onWriteComplete");
+      set_host_context(&scope, nullptr);
+      auto status = context.getParams().getStatus();
+      m_client->OnWriteComplete(static_cast<cdm::FileIOClient::Status>(status));
+      clear_host_context();
+      KJ_DLOG(INFO, "exiting onWriteComplete");
+    });
+  }
+
+  FileIOClientProxyImpl(cdm::FileIOClient* client) : m_client(client) {}
+};
+
 class HostWrapper: public cdm::Host_10 {
 
   HostProxy::Client m_host;
@@ -562,7 +648,13 @@ public:
   }
 
   cdm::FileIO* CreateFileIO(cdm::FileIOClient* client) override {
-    KJ_UNIMPLEMENTED("CreateFileIO");
+    KJ_DLOG(INFO, "CreateFileIO");
+    auto request = m_host.createFileIORequest();
+    request.setClient(kj::heap<FileIOClientProxyImpl>(client));
+    auto response = request.send().wait(*host_ctx.scope);
+    auto file_io  = response.hasFileIO() ? new FileIOWrapper(response.getFileIO()) : nullptr;
+    KJ_DLOG(INFO, "exiting CreateFileIO", file_io);
+    return file_io;
   }
 
   void RequestStorageId(uint32_t version) override {
