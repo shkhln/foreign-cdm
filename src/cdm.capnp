@@ -67,7 +67,7 @@ interface CdmProxy {
   decryptAndDecodeSamples         @ 15 (); # TODO
   onPlatformChallengeResponse     @ 16 (); # TODO
   onQueryOutputProtectionStatus   @ 17 (result: UInt32, linkMask: UInt32, outputProtectionMask: UInt32);
-  onStorageId                     @ 18 (); # TODO
+  onStorageId                     @ 18 (version: UInt32, storageId: Data);
 }
 
 interface HostProxy {
@@ -86,5 +86,5 @@ interface HostProxy {
   queryOutputProtectionStatus  @ 12 ();
   onDeferredInitializationDone @ 13 (); # TODO
   createFileIO                 @ 14 (); # TODO
-  requestStorageId             @ 15 (); # TODO
+  requestStorageId             @ 15 (version: UInt32);
 }

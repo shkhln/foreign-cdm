@@ -256,7 +256,12 @@ public:
   }
 
   void OnStorageId(uint32_t version, const uint8_t* storage_id, uint32_t storage_id_size) override {
-    KJ_UNIMPLEMENTED("OnStorageId");
+    KJ_DLOG(INFO, "OnStorageId", version, storage_id, storage_id_size);
+    auto request = m_cdm.onStorageIdRequest();
+    request.setVersion(version);
+    request.setStorageId(kj::arrayPtr(storage_id, storage_id_size));
+    request.send().wait(m_io.waitScope);
+    KJ_DLOG(INFO, "exiting OnStorageId");
   }
 
   void Destroy() override {
@@ -380,6 +385,14 @@ public:
     KJ_DLOG(INFO, "queryOutputProtectionStatus");
     m_host->QueryOutputProtectionStatus();
     KJ_DLOG(INFO, "exiting queryOutputProtectionStatus");
+    return kj::READY_NOW;
+  }
+
+  kj::Promise<void> requestStorageId(RequestStorageIdContext context) override {
+    KJ_DLOG(INFO, "requestStorageId");
+    auto version = context.getParams().getVersion();
+    m_host->RequestStorageId(version);
+    KJ_DLOG(INFO, "exiting requestStorageId");
     return kj::READY_NOW;
   }
 

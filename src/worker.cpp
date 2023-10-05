@@ -416,6 +416,18 @@ public:
     });
   }
 
+  kj::Promise<void> onStorageId(OnStorageIdContext context) override {
+    return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
+      KJ_DLOG(INFO, "onStorageId");
+      set_host_context(&scope, &m_allocator);
+      auto version    = context.getParams().getVersion();
+      auto storage_id = context.getParams().getStorageId();
+      m_cdm->OnStorageId(version, storage_id.begin(), storage_id.size());
+      clear_host_context();
+      KJ_DLOG(INFO, "exiting onStorageId");
+    });
+  }
+
   CdmProxyImpl(cdm::ContentDecryptionModule_10* cdm, kj::AutoCloseFd memfd, XAlloc allocator, void* encrypted_buffers) :
     m_cdm(cdm), m_memfd(kj::mv(memfd)), m_allocator(kj::mv(allocator)), m_encrypted_buffers(encrypted_buffers) {}
 
@@ -554,7 +566,11 @@ public:
   }
 
   void RequestStorageId(uint32_t version) override {
-    KJ_UNIMPLEMENTED("RequestStorageId");
+    KJ_DLOG(INFO, "RequestStorageId");
+    auto request = m_host.requestStorageIdRequest();
+    request.setVersion(version);
+    auto response = request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting RequestStorageId");
   }
 
   HostWrapper(HostProxy::Client&& host) : m_host(host) {}
