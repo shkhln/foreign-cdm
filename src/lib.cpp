@@ -63,7 +63,12 @@ public:
   }
 
   void GetStatusForPolicy(uint32_t promise_id, const cdm::Policy& policy) override {
-    KJ_UNIMPLEMENTED("GetStatusForPolicy");
+    KJ_DLOG(INFO, "GetStatusForPolicy", promise_id, policy.min_hdcp_version);
+    auto request = m_cdm.getStatusForPolicyRequest();
+    request.setPromiseId(promise_id);
+    request.getPolicy().setMinHdcpVersion(policy.min_hdcp_version);
+    request.send().wait(m_io.waitScope);
+    KJ_DLOG(INFO, "exiting GetStatusForPolicy");
   }
 
   void SetServerCertificate(uint32_t promise_id, const uint8_t* server_certificate_data, uint32_t server_certificate_data_size) override {

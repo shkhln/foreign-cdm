@@ -223,6 +223,20 @@ public:
     });
   }
 
+  kj::Promise<void> getStatusForPolicy(GetStatusForPolicyContext context) override {
+    return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
+      KJ_DLOG(INFO, "getStatusForPolicy");
+      set_host_context(&scope, &m_allocator);
+      auto promise_id = context.getParams().getPromiseId();
+      const struct cdm::Policy policy = {
+        .min_hdcp_version = static_cast<cdm::HdcpVersion>(context.getParams().getPolicy().getMinHdcpVersion())
+      };
+      m_cdm->GetStatusForPolicy(promise_id, policy);
+      clear_host_context();
+      KJ_DLOG(INFO, "exiting getStatusForPolicy");
+    });
+  }
+
   kj::Promise<void> setServerCertificate(SetServerCertificateContext context) override {
     return kj::startFiber(FIBER_STACK_SIZE, [context, this](kj::WaitScope& scope) mutable {
       KJ_DLOG(INFO, "setServerCertificate");

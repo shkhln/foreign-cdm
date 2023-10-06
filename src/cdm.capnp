@@ -48,9 +48,13 @@ struct DecryptedBlock {
   timestamp @1: Int64;
 }
 
+struct Policy {
+  minHdcpVersion @0: UInt32;
+}
+
 interface CdmProxy {
   initialize                      @  0 (allowDistinctiveIdentifier: Bool, allowPersistentState: Bool, useHwSecureCodecs: Bool);
-  getStatusForPolicy              @  1 (); # TODO
+  getStatusForPolicy              @  1 (promiseId: UInt32, policy: Policy);
   setServerCertificate            @  2 (promiseId: UInt32, serverCertificateData: Data);
   createSessionAndGenerateRequest @  3 (promiseId: UInt32, sessionType: UInt32, initDataType: UInt32, initData: Data);
   loadSession                     @  4 (); # TODO
