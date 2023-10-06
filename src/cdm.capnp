@@ -90,7 +90,7 @@ interface FileIOClientProxy {
 interface HostProxy {
   setTimer                     @  0 (delayMs: Int64, context: UInt64);
   onInitialized                @  1 (success: Bool);
-  onResolveKeyStatusPromise    @  2 (); # TODO
+  onResolveKeyStatusPromise    @  2 (promiseId: UInt32, keyStatus: UInt32);
   onResolveNewSessionPromise   @  3 (promiseId: UInt32, sessionId: Text);
   onResolvePromise             @  4 (promiseId: UInt32);
   onRejectPromise              @  5 (promiseId: UInt32, exception: UInt32, systemCode: UInt32, errorMessage: Text);

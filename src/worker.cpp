@@ -569,7 +569,12 @@ public:
   }
 
   void OnResolveKeyStatusPromise(uint32_t promise_id, cdm::KeyStatus key_status) override {
-    KJ_UNIMPLEMENTED("OnResolveKeyStatusPromise");
+    KJ_DLOG(INFO, "OnResolveKeyStatusPromise", promise_id, key_status);
+    auto request = m_host.onResolveKeyStatusPromiseRequest();
+    request.setPromiseId(promise_id);
+    request.setKeyStatus(key_status);
+    request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting OnResolveKeyStatusPromise");
   }
 
   void OnResolveNewSessionPromise(uint32_t promise_id, const char* session_id, uint32_t session_id_size) override {

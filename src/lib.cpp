@@ -390,6 +390,15 @@ public:
     return kj::READY_NOW;
   }
 
+  kj::Promise<void> onResolveKeyStatusPromise(OnResolveKeyStatusPromiseContext context) override {
+    KJ_DLOG(INFO, "onResolveKeyStatusPromise");
+    auto promise_id = context.getParams().getPromiseId();
+    auto key_status = context.getParams().getKeyStatus();
+    m_host->OnResolveKeyStatusPromise(promise_id, static_cast<cdm::KeyStatus>(key_status));
+    KJ_DLOG(INFO, "exiting onResolveKeyStatusPromise");
+    return kj::READY_NOW;
+  }
+
   kj::Promise<void> onResolveNewSessionPromise(OnResolveNewSessionPromiseContext context) override {
     KJ_DLOG(INFO, "onResolveNewSessionPromise");
     auto promise_id = context.getParams().getPromiseId();
