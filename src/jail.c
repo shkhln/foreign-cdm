@@ -28,6 +28,10 @@ static bool wmount(const char* fstype, const char* from, const char* to, unsigne
 
   int capacity = 8;
 
+  if (strcmp(fstype, "devfs") == 0) {
+    capacity += 2;
+  }
+
   if (flags & MNT_NOCOVER) {
     capacity += 2;
   }
@@ -55,6 +59,20 @@ static bool wmount(const char* fstype, const char* from, const char* to, unsigne
   iov[7].iov_len  = sizeof(errmsg);
 
   int len = 8;
+
+  if (strcmp(fstype, "devfs") == 0) {
+
+    assert(len + 2 <= capacity);
+
+    iov[len].iov_base = "ruleset";
+    iov[len].iov_len  = sizeof("ruleset");
+    len++;
+
+    // apparently 4 means devfsrules_jail (/etc/defaults/devfs.rules)
+    iov[len].iov_base = "4";
+    iov[len].iov_len  = sizeof("4");
+    len++;
+  }
 
   if (flags & MNT_NOCOVER) {
 
@@ -134,7 +152,6 @@ int main(int argc, char* argv[]) {
       assert(mkdir("opt",   0755) == 0);
 
       //TODO: use compat.linux.emul_path
-      //TODO: we might get away with exposing just /dev/null and /dev/(u)random
       wmount("nullfs",    "/compat/linux/bin",   "bin",   MNT_RDONLY | MNT_NOSUID);
       wmount("devfs",     "devfs",               "dev",   0);
       wmount("nullfs",    "/compat/linux/etc",   "etc",   MNT_RDONLY | MNT_NOSUID);
@@ -154,7 +171,7 @@ int main(int argc, char* argv[]) {
         wmount("nullfs", worker_path, "opt/fcdm-worker", MNT_RDONLY | MNT_NOSUID);
       }
 
-      touch(".setup-done", 0222);
+      touch(".setup-done", 0444);
 
       assert(chdir(home_path) == 0);
 
