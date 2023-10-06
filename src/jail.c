@@ -19,7 +19,7 @@
 
 #define ULL_HI_MASK ((unsigned long long)-1 ^ (unsigned int)-1)
 
-static bool wmount(const char* fstype, const char* from, const char* to, unsigned long long flags) {
+static bool xmount(const char* fstype, const char* from, const char* to, unsigned long long flags) {
 
   assert(((flags & ULL_HI_MASK) & ~MNT_NOCOVER) == 0);
 
@@ -101,7 +101,25 @@ static bool wmount(const char* fstype, const char* from, const char* to, unsigne
 }
 
 static void touch(char* path, int mode) {
-  assert(close(open(path, O_WRONLY | O_CREAT, mode)) == 0);
+  int fd = open(path, O_WRONLY | O_CREAT, mode);
+  if (fd == -1) {
+    err(EXIT_FAILURE, "can't create %s", path);
+  }
+
+  int err = close(fd);
+  assert(err == 0);
+}
+
+static void xchdir(const char* path) {
+  if (chdir(path) == -1) {
+    err(EXIT_FAILURE, "chdir(%s)", path);
+  }
+}
+
+static void xmkdir(const char* path, mode_t mode) {
+  if (mkdir(path, mode) == -1) {
+    err(EXIT_FAILURE, "mkdir(%s)", path);
+  }
 }
 
 int main(int argc, char* argv[]) {
@@ -133,53 +151,56 @@ int main(int argc, char* argv[]) {
   }
 
   if (mkdir(FCDM_JAIL_DIR, 0555) == 0) {
-    assert(chown(FCDM_JAIL_DIR, getuid(), getgid()) == 0);
+    int err = chown(FCDM_JAIL_DIR, getuid(), getgid());
+    assert(err == 0);
   }
 
   // doesn't look like tmpfs supports MNT_NOEXEC/MNT_NOSUID
-  if (wmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_NOCOVER)) {
+  if (xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_NOCOVER)) {
 
-      assert(chdir(FCDM_JAIL_DIR) == 0);
+      xchdir(FCDM_JAIL_DIR);
 
-      assert(mkdir("bin",   0555) == 0);
-      assert(mkdir("dev",   0555) == 0);
-      assert(mkdir("etc",   0555) == 0);
-      assert(mkdir("lib",   0555) == 0);
-      assert(mkdir("lib64", 0555) == 0);
-      assert(mkdir("proc",  0555) == 0);
-      assert(mkdir("sys",   0555) == 0);
-      assert(mkdir("usr",   0555) == 0);
-      assert(mkdir("opt",   0755) == 0);
+      xmkdir("bin",   0555);
+      xmkdir("dev",   0555);
+      xmkdir("etc",   0555);
+      xmkdir("lib",   0555);
+      xmkdir("lib64", 0555);
+      xmkdir("proc",  0555);
+      xmkdir("sys",   0555);
+      xmkdir("usr",   0555);
+      xmkdir("opt",   0755);
 
       //TODO: use compat.linux.emul_path
-      wmount("nullfs",    "/compat/linux/bin",   "bin",   MNT_RDONLY | MNT_NOSUID);
-      wmount("devfs",     "devfs",               "dev",   0);
-      wmount("nullfs",    "/compat/linux/etc",   "etc",   MNT_RDONLY | MNT_NOSUID);
-      wmount("nullfs",    "/compat/linux/lib",   "lib",   MNT_RDONLY | MNT_NOSUID);
-      wmount("nullfs",    "/compat/linux/lib64", "lib64", MNT_RDONLY | MNT_NOSUID);
-      wmount("linprocfs", "linprocfs",           "proc",  0);
-      wmount("linsysfs",  "linsysfs",            "sys",   0);
-      wmount("nullfs",    "/compat/linux/usr",   "usr",   MNT_RDONLY | MNT_NOSUID);
+      xmount("nullfs",    "/compat/linux/bin",   "bin",   MNT_RDONLY | MNT_NOSUID);
+      xmount("devfs",     "devfs",               "dev",   0);
+      xmount("nullfs",    "/compat/linux/etc",   "etc",   MNT_RDONLY | MNT_NOSUID);
+      xmount("nullfs",    "/compat/linux/lib",   "lib",   MNT_RDONLY | MNT_NOSUID);
+      xmount("nullfs",    "/compat/linux/lib64", "lib64", MNT_RDONLY | MNT_NOSUID);
+      xmount("linprocfs", "linprocfs",           "proc",  0);
+      xmount("linsysfs",  "linsysfs",            "sys",   0);
+      xmount("nullfs",    "/compat/linux/usr",   "usr",   MNT_RDONLY | MNT_NOSUID);
 
       if (libcdm_path != NULL) {
         touch("opt/libcdm.so", 0555);
-        wmount("nullfs", libcdm_path, "opt/libcdm.so", MNT_RDONLY | MNT_NOSUID);
+        xmount("nullfs", libcdm_path, "opt/libcdm.so", MNT_RDONLY | MNT_NOSUID);
       }
 
       if (worker_path != NULL) {
         touch("opt/fcdm-worker", 0555);
-        wmount("nullfs", worker_path, "opt/fcdm-worker", MNT_RDONLY | MNT_NOSUID);
+        xmount("nullfs", worker_path, "opt/fcdm-worker", MNT_RDONLY | MNT_NOSUID);
       }
 
       touch(".setup-done", 0444);
 
-      assert(chdir(home_path) == 0);
+      xchdir(home_path);
 
-      assert(wmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_NOCOVER | MNT_RDONLY | MNT_UPDATE));
+      xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_RDONLY | MNT_UPDATE);
   } else {
     // this is both a bit racy and doesn't take into account other potential reasons for EBUSY
     warnx("assuming %s is already mounted", FCDM_JAIL_DIR);
-    assert(access(FCDM_JAIL_DIR "/.setup-done", F_OK) == 0);
+    if (access(FCDM_JAIL_DIR "/.setup-done", F_OK) == -1) {
+      err(EXIT_FAILURE, "%s", FCDM_JAIL_DIR "/.setup-done");
+    }
   }
 
   struct jailparam params[1];
@@ -211,7 +232,8 @@ int main(int argc, char* argv[]) {
     assert(errno != ERANGE && errno != EINVAL);
 
     if (socket_fd > 3) {
-      close_range(3, socket_fd - 1, 0);
+      int err = close_range(3, socket_fd - 1, 0);
+      assert(err == 0);
     }
 
     closefrom(socket_fd + 1);
