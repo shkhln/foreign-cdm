@@ -1,11 +1,12 @@
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <sys/_iovec.h>
 #include <sys/param.h>
@@ -186,9 +187,18 @@ int main(int argc, char* argv[]) {
     err(EXIT_FAILURE, "setresuid");
   }
 
-  //TODO: close unnecessary file descriptors before exec
-
   if (argc > 1) {
+
+    errno = 0;
+    intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
+    assert(errno != ERANGE && errno != EINVAL);
+
+    if (socket_fd > 3) {
+      close_range(3, socket_fd - 1, 0);
+    }
+
+    closefrom(socket_fd + 1);
+
     char* const env[] = { "FCDM_CDM_SO_PATH=/opt/libcdm.so", NULL };
     execve("/opt/fcdm-worker", argv, env);
   } else {
