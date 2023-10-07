@@ -558,7 +558,7 @@ static pid_t spawn_worker(int sockets[2]) {
   KJ_ASSERT(strcmp(&jail_wrapper_path[last_sep_pos + 1], "fcdm-worker") == 0);
   snprintf(&jail_wrapper_path[last_sep_pos + 1], sizeof("fcdm-worker"), "fcdm-jail");
 
-  int err = posix_spawn(&pid, jail_wrapper_path, nullptr, nullptr, (char* const*)args, environ);
+  int err = posix_spawn(&pid, jail_wrapper_path, nullptr, nullptr, const_cast<char* const*>(args), environ);
 
   free(jail_wrapper_path);
 
