@@ -14,6 +14,7 @@
 #include <sys/jail.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <jail.h>
 #include "config.h"
 
@@ -146,39 +147,42 @@ int main(int argc, char* argv[]) {
     err(EXIT_FAILURE, "can't access %s", worker_path);
   }
 
-  if (chdir(home_path) == -1) {
-    err(EXIT_FAILURE, "chdir(%s)", home_path);
-  }
+  xchdir(home_path);
 
-  if (mkdir(FCDM_JAIL_DIR, 0555) == 0) {
-    int err = chown(FCDM_JAIL_DIR, getuid(), getgid());
-    assert(err == 0);
-  }
+  //TODO: XDG guidlines?
+  mkdir(FCDM_JAIL_DIR, 0555);
+  chown(FCDM_JAIL_DIR, getuid(), getgid());
 
   // doesn't look like tmpfs supports MNT_NOEXEC/MNT_NOSUID
   if (xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_NOCOVER)) {
 
       xchdir(FCDM_JAIL_DIR);
 
-      xmkdir("bin",   0555);
-      xmkdir("dev",   0555);
-      xmkdir("etc",   0555);
-      xmkdir("lib",   0555);
-      xmkdir("lib64", 0555);
-      xmkdir("proc",  0555);
-      xmkdir("sys",   0555);
-      xmkdir("usr",   0555);
-      xmkdir("opt",   0755);
+      char linux_emul_path[MAXPATHLEN];
+      size_t linux_emul_path_size = MAXPATHLEN;
+      if (sysctlbyname("compat.linux.emul_path", linux_emul_path, &linux_emul_path_size, NULL, 0) == -1) {
+        err(EXIT_FAILURE, "sysctlbyname");
+      }
 
-      //TODO: use compat.linux.emul_path
-      xmount("nullfs",    "/compat/linux/bin",   "bin",   MNT_RDONLY | MNT_NOSUID);
-      xmount("devfs",     "devfs",               "dev",   0);
-      xmount("nullfs",    "/compat/linux/etc",   "etc",   MNT_RDONLY | MNT_NOSUID);
-      xmount("nullfs",    "/compat/linux/lib",   "lib",   MNT_RDONLY | MNT_NOSUID);
-      xmount("nullfs",    "/compat/linux/lib64", "lib64", MNT_RDONLY | MNT_NOSUID);
-      xmount("linprocfs", "linprocfs",           "proc",  0);
-      xmount("linsysfs",  "linsysfs",            "sys",   0);
-      xmount("nullfs",    "/compat/linux/usr",   "usr",   MNT_RDONLY | MNT_NOSUID);
+      const char* dirs[] = { "bin", "etc", "lib", "lib64", "usr" };
+      for (unsigned int i = 0; i < nitems(dirs); i++) {
+
+        xmkdir(dirs[i], 0555);
+
+        char path[MAXPATHLEN];
+        int n = snprintf(path, MAXPATHLEN, "%s/%s", linux_emul_path, dirs[i]);
+        assert(n > 0 && n < MAXPATHLEN);
+
+        xmount("nullfs", path, dirs[i], MNT_RDONLY | MNT_NOSUID);
+      }
+
+      xmkdir("dev",  0555);
+      xmkdir("proc", 0555);
+      xmkdir("sys",  0555);
+
+      xmount("devfs",     "devfs",     "dev",  0);
+      xmount("linprocfs", "linprocfs", "proc", 0);
+      xmount("linsysfs",  "linsysfs",  "sys",  0);
 
       if (libcdm_path != NULL) {
         touch("opt/libcdm.so", 0555);
@@ -191,9 +195,7 @@ int main(int argc, char* argv[]) {
       }
 
       touch(".setup-done", 0444);
-
       xchdir(home_path);
-
       xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_RDONLY | MNT_UPDATE);
   } else {
     // this is both a bit racy and doesn't take into account other potential reasons for EBUSY
