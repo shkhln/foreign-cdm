@@ -18,11 +18,9 @@
 #include <jail.h>
 #include "config.h"
 
-#define ULL_HI_MASK ((unsigned long long)-1 ^ (unsigned int)-1)
-
 static bool xmount(const char* fstype, const char* from, const char* to, unsigned long long flags) {
 
-  assert(((flags & ULL_HI_MASK) & ~MNT_NOCOVER) == 0);
+  assert(((flags & (~0ULL ^ ~0U)) & ~MNT_NOCOVER) == 0);
 
   char errmsg[255];
   errmsg[0] = '\0';
@@ -153,10 +151,10 @@ int main(int argc, char* argv[]) {
   mkdir(FCDM_JAIL_DIR, 0555);
   chown(FCDM_JAIL_DIR, getuid(), getgid());
 
-  // doesn't look like tmpfs supports MNT_NOEXEC/MNT_NOSUID
-  if (xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_NOCOVER)) {
+  xchdir(FCDM_JAIL_DIR);
 
-      xchdir(FCDM_JAIL_DIR);
+  // doesn't look like tmpfs supports MNT_NOEXEC/MNT_NOSUID
+  if (xmount("tmpfs", "tmpfs", ".", MNT_NOCOVER)) {
 
       char linux_emul_path[MAXPATHLEN];
       size_t linux_emul_path_size = MAXPATHLEN;
@@ -184,31 +182,37 @@ int main(int argc, char* argv[]) {
       xmount("linprocfs", "linprocfs", "proc", 0);
       xmount("linsysfs",  "linsysfs",  "sys",  0);
 
+      xmkdir("opt", 0555);
+
       if (libcdm_path != NULL) {
-        touch("opt/libcdm.so", 0555);
-        xmount("nullfs", libcdm_path, "opt/libcdm.so", MNT_RDONLY | MNT_NOSUID);
+        touch("opt/cdm.so", 0555);
+        xmount("nullfs", libcdm_path, "opt/cdm.so", MNT_RDONLY | MNT_NOSUID);
       }
 
       if (worker_path != NULL) {
-        touch("opt/fcdm-worker", 0555);
-        xmount("nullfs", worker_path, "opt/fcdm-worker", MNT_RDONLY | MNT_NOSUID);
+        touch("opt/worker", 0555);
+        xmount("nullfs", worker_path, "opt/worker", MNT_RDONLY | MNT_NOSUID);
       }
 
       touch(".setup-done", 0444);
-      xchdir(home_path);
-      xmount("tmpfs", "tmpfs", FCDM_JAIL_DIR, MNT_RDONLY | MNT_UPDATE);
+
+      xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
+      xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY);
   } else {
     // this is both a bit racy and doesn't take into account other potential reasons for EBUSY
-    warnx("assuming %s is already mounted", FCDM_JAIL_DIR);
-    if (access(FCDM_JAIL_DIR "/.setup-done", F_OK) == -1) {
-      err(EXIT_FAILURE, "%s", FCDM_JAIL_DIR "/.setup-done");
-    }
+    warnx("assuming %s/%s is already mounted", home_path, FCDM_JAIL_DIR);
+  }
+
+  // we keep this file open to make unmounting it fail with EBUSY until the jailed process is gone
+  int setup_marker_fd = open(".setup-done", O_RDONLY);
+  if (setup_marker_fd == -1) {
+    err(EXIT_FAILURE, "open(.setup-done)");
   }
 
   struct jailparam params[1];
 
   jailparam_init  (&params[0], "path");
-  jailparam_import(&params[0], FCDM_JAIL_DIR);
+  jailparam_import(&params[0], ".");
 
   int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
   if (jid == -1) {
@@ -233,15 +237,22 @@ int main(int argc, char* argv[]) {
     intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
     assert(errno != ERANGE && errno != EINVAL);
 
-    if (socket_fd > 3) {
-      int err = close_range(3, socket_fd - 1, 0);
-      assert(err == 0);
+    if (setup_marker_fd < 5) {
+      setup_marker_fd = dup(setup_marker_fd);
     }
 
-    closefrom(socket_fd + 1);
+    if (socket_fd < 5) {
+      socket_fd = dup(socket_fd);
+    }
 
-    char* const env[] = { "FCDM_CDM_SO_PATH=/opt/libcdm.so", NULL };
-    execve("/opt/fcdm-worker", argv, env);
+    dup2(setup_marker_fd, 3);
+    dup2(socket_fd, 4);
+
+    closefrom(5);
+
+    char* const arg[] = { "fcdm-worker", "4", NULL };
+    char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
+    execve("/opt/worker", arg, env);
   } else {
     char* const env[] = { "PATH=/bin", NULL };
     execve("/bin/sh", argv, env);
