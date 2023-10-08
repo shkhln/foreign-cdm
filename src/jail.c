@@ -35,7 +35,7 @@ static bool xmount(const char* fstype, const char* from, const char* to, unsigne
     capacity += 2;
   }
 
-  struct iovec* iov = malloc(capacity);
+  struct iovec* iov = malloc(sizeof(struct iovec) * capacity);
 
   iov[0].iov_base = "fstype";
   iov[0].iov_len  = sizeof("fstype");
