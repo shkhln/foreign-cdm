@@ -19,8 +19,8 @@ static const char* paths[] = {
   FCDM_JAIL_DIR "/proc",
   FCDM_JAIL_DIR "/sys",
   FCDM_JAIL_DIR "/usr",
-  FCDM_JAIL_DIR "/opt/worker",
   FCDM_JAIL_DIR "/opt/cdm.so",
+  FCDM_JAIL_DIR "/opt/worker",
   FCDM_JAIL_DIR
 };
 

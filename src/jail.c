@@ -86,6 +86,8 @@ static bool xmount(const char* fstype, const char* from, const char* to, unsigne
     len++;
   }
 
+  assert(len == capacity);
+
   if (nmount(iov, len, (int)flags) == 0) {
     free(iov);
     return true;
@@ -99,20 +101,20 @@ static bool xmount(const char* fstype, const char* from, const char* to, unsigne
   err(EXIT_FAILURE, "nmount %s -> %s: %s", from, to, errmsg);
 }
 
-static void touch(char* path, int mode) {
-  int fd = open(path, O_WRONLY | O_CREAT, mode);
+static void xchdir(const char* path) {
+  if (chdir(path) == -1) {
+    err(EXIT_FAILURE, "chdir(%s)", path);
+  }
+}
+
+static void xcreat(char* path, int mode) {
+  int fd = open(path, O_CREAT | O_WRONLY, mode);
   if (fd == -1) {
     err(EXIT_FAILURE, "can't create %s", path);
   }
 
   int err = close(fd);
   assert(err == 0);
-}
-
-static void xchdir(const char* path) {
-  if (chdir(path) == -1) {
-    err(EXIT_FAILURE, "chdir(%s)", path);
-  }
 }
 
 static void xmkdir(const char* path, mode_t mode) {
@@ -185,16 +187,16 @@ int main(int argc, char* argv[]) {
       xmkdir("opt", 0555);
 
       if (libcdm_path != NULL) {
-        touch("opt/cdm.so", 0555);
+        xcreat("opt/cdm.so", 0555);
         xmount("nullfs", libcdm_path, "opt/cdm.so", MNT_RDONLY | MNT_NOSUID);
       }
 
       if (worker_path != NULL) {
-        touch("opt/worker", 0555);
+        xcreat("opt/worker", 0555);
         xmount("nullfs", worker_path, "opt/worker", MNT_RDONLY | MNT_NOSUID);
       }
 
-      touch(".setup-done", 0444);
+      xcreat(".setup-done", 0444);
 
       xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
       xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY);
