@@ -11,11 +11,15 @@
 #include <sys/_iovec.h>
 #include <sys/param.h>
 #include <sys/conf.h>
+#include <sys/event.h>
 #include <sys/jail.h>
 #include <sys/mount.h>
+#include <sys/procdesc.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/wait.h>
 #include <jail.h>
+
 #include "config.h"
 
 static bool xmount(const char* fstype, const char* from, const char* to, unsigned long long flags) {
@@ -113,8 +117,8 @@ static void xcreat(char* path, int mode) {
     err(EXIT_FAILURE, "can't create %s", path);
   }
 
-  int err = close(fd);
-  assert(err == 0);
+  int e = close(fd);
+  assert(e == 0);
 }
 
 static void xmkdir(const char* path, mode_t mode) {
@@ -205,59 +209,120 @@ int main(int argc, char* argv[]) {
     warnx("assuming %s/%s is already mounted", home_path, FCDM_JAIL_DIR);
   }
 
-  // we keep this file open to make unmounting it fail with EBUSY until the jailed process is gone
-  int setup_marker_fd = open(".setup-done", O_RDONLY);
-  if (setup_marker_fd == -1) {
-    err(EXIT_FAILURE, "open(.setup-done)");
+  int pid_fd;
+  pid_t pid = pdfork(&pid_fd, 0);
+  if (pid == -1) {
+    err(EXIT_FAILURE, "pdfork");
   }
 
-  struct jailparam params[1];
+  if (pid == 0) {
 
-  jailparam_init  (&params[0], "path");
-  jailparam_import(&params[0], ".");
-
-  int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
-  if (jid == -1) {
-    errx(EXIT_FAILURE, "%s", jail_errmsg);
-  }
-
-  jailparam_free(params, nitems(params));
-
-  //TODO: should we use setusercontext instead?
-  //TODO: there is also "allow.suser" jail param
-  if (setresgid(GID_NOBODY, GID_NOBODY, GID_NOBODY) == -1) {
-    err(EXIT_FAILURE, "setresgid");
-  }
-
-  if (setresuid(UID_NOBODY, UID_NOBODY, UID_NOBODY) == -1) {
-    err(EXIT_FAILURE, "setresuid");
-  }
-
-  if (argc > 1) {
-
-    errno = 0;
-    intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
-    assert(errno != ERANGE && errno != EINVAL);
-
-    if (setup_marker_fd < 5) {
-      setup_marker_fd = dup(setup_marker_fd);
+    // we keep this file open to make unmounting it fail with EBUSY until the jailed process is gone
+    int setup_marker_fd = open(".setup-done", O_RDONLY);
+    if (setup_marker_fd == -1) {
+      err(EXIT_FAILURE, "open(.setup-done)");
     }
 
-    if (socket_fd < 5) {
-      socket_fd = dup(socket_fd);
+    struct jailparam params[1];
+
+    jailparam_init  (&params[0], "path");
+    jailparam_import(&params[0], ".");
+
+    int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
+    if (jid == -1) {
+      errx(EXIT_FAILURE, "%s", jail_errmsg);
     }
 
-    dup2(setup_marker_fd, 3);
-    dup2(socket_fd, 4);
+    jailparam_free(params, nitems(params));
 
-    closefrom(5);
+    //TODO: should we use setusercontext instead?
+    //TODO: there is also "allow.suser" jail param
+    if (setresgid(GID_NOBODY, GID_NOBODY, GID_NOBODY) == -1) {
+      err(EXIT_FAILURE, "setresgid");
+    }
 
-    char* const arg[] = { "fcdm-worker", "4", NULL };
-    char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
-    execve("/opt/worker", arg, env);
+    if (setresuid(UID_NOBODY, UID_NOBODY, UID_NOBODY) == -1) {
+      err(EXIT_FAILURE, "setresuid");
+    }
+
+    if (argc > 1) {
+
+      errno = 0;
+      intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
+      assert(errno != ERANGE && errno != EINVAL);
+
+      if (setup_marker_fd < 5) {
+        setup_marker_fd = dup(setup_marker_fd);
+      }
+
+      if (socket_fd < 5) {
+        socket_fd = dup(socket_fd);
+      }
+
+      dup2(setup_marker_fd, 3);
+      dup2(socket_fd, 4);
+
+      closefrom(5);
+
+      char* const arg[] = { "fcdm-worker", "4", NULL };
+      char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
+      execve("/opt/worker", arg, env);
+    } else {
+      char* const env[] = { "PATH=/bin", NULL };
+      execve("/bin/sh", argv, env);
+    }
+    err(EXIT_FAILURE, "execve");
+
   } else {
-    char* const env[] = { "PATH=/bin", NULL };
-    execve("/bin/sh", argv, env);
+
+    int kq = kqueue();
+    if (kq == -1) {
+      err(EXIT_FAILURE, "kqueue");
+    }
+
+    struct kevent kev;
+    EV_SET(&kev, pid_fd, EVFILT_PROCDESC, EV_ADD, NOTE_EXIT, 0, NULL);
+
+    if (kevent(kq, &kev, 1, NULL, 0, NULL) == -1) {
+      err(EXIT_FAILURE, "kevent");
+    }
+
+    while (kevent(kq, NULL, 0, &kev, 1, NULL) == -1) {
+      if (errno != EINTR) {
+        err(EXIT_FAILURE, "kevent");
+      }
+    }
+
+    int e = close(pid_fd);
+    assert(e == 0);
+
+    // curiously enough we can't unmount .setup-done while cwd is FCDM_JAIL_DIR
+    xchdir(home_path);
+
+    static const char* paths[] = {
+      FCDM_JAIL_DIR "/.setup-done",
+      FCDM_JAIL_DIR "/bin",
+      FCDM_JAIL_DIR "/dev",
+      FCDM_JAIL_DIR "/etc",
+      FCDM_JAIL_DIR "/lib",
+      FCDM_JAIL_DIR "/lib64",
+      FCDM_JAIL_DIR "/proc",
+      FCDM_JAIL_DIR "/sys",
+      FCDM_JAIL_DIR "/usr",
+      FCDM_JAIL_DIR "/opt/cdm.so",
+      FCDM_JAIL_DIR "/opt/worker",
+      FCDM_JAIL_DIR
+    };
+
+    for (unsigned int i = 0; i < nitems(paths); i++) {
+      if (unmount(paths[i], 0) == -1) {
+        warn("can't unmount %s/%s", home_path, paths[i]);
+        if (i == 0 && errno == EBUSY) {
+          break;
+        }
+      }
+    }
+
+    return WEXITSTATUS(kev.data);
   }
-  err(EXIT_FAILURE, "execve");
 }
