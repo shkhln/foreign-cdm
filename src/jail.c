@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
     err(EXIT_FAILURE, "can't access %s", home_path);
   }
 
-  if (libcdm_path != NULL && access(libcdm_path, R_OK | X_OK) == -1) {
+  if (libcdm_path != NULL && access(libcdm_path, R_OK) == -1) {
     err(EXIT_FAILURE, "can't access %s", libcdm_path);
   }
 
