@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <kj/main.h>
 #include <capnp/rpc-twoparty.h>
 #include <cdm/content_decryption_module.h>
@@ -42,6 +43,7 @@ static uint32_t write_input_buffer(const cdm::InputBuffer_2& source, XAlloc& all
 
 class CdmWrapper: public cdm::ContentDecryptionModule_10 {
 
+  pid_t                              m_worker_pid;
   kj::AsyncIoContext&                m_io;
   kj::Own<kj::AsyncCapabilityStream> m_stream;
   kj::Own<capnp::TwoPartyClient>     m_client;
@@ -276,11 +278,13 @@ public:
     KJ_SYSCALL(munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE));
     m_client.~Own();
     m_stream.~Own();
+    int status;
+    KJ_SYSCALL(waitpid(m_worker_pid, &status, 0));
   }
 
-  CdmWrapper(kj::AsyncIoContext& io, kj::Own<kj::AsyncCapabilityStream> stream, kj::Own<capnp::TwoPartyClient> client,
+  CdmWrapper(pid_t worker_pid, kj::AsyncIoContext& io, kj::Own<kj::AsyncCapabilityStream> stream, kj::Own<capnp::TwoPartyClient> client,
     CdmProxy::Client cdm, cdm::Host_10* host, XAlloc allocator, void* decrypted_buffers) :
-      m_io(io), m_stream(kj::mv(stream)), m_client(kj::mv(client)),
+      m_worker_pid(worker_pid), m_io(io), m_stream(kj::mv(stream)), m_client(kj::mv(client)),
         m_cdm(kj::mv(cdm)), m_host(host), m_allocator(kj::mv(allocator)), m_decrypted_buffers(decrypted_buffers) {}
 
   ~CdmWrapper() noexcept {
@@ -518,18 +522,16 @@ CDM_API void DeinitializeCdmModule() {
   // do nothing
 }
 
-static bool spawn_worker(int sockets[2]) {
-
-  KJ_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets));
-  KJ_SYSCALL(fcntl(sockets[0], F_SETFD, FD_CLOEXEC));
+static pid_t spawn_worker(int sockets[2]) {
 
   char* worker_path = getenv("FCDM_WORKER_PATH");
   if (worker_path == nullptr) {
     KJ_LOG(FATAL, "FCDM_WORKER_PATH is not set");
-    KJ_SYSCALL(close(sockets[0]));
-    KJ_SYSCALL(close(sockets[1]));
-    return false;
+    return -1;
   }
+
+  KJ_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets));
+  KJ_SYSCALL(fcntl(sockets[0], F_SETFD, FD_CLOEXEC));
 
   char socket_fd_str[11];
   snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
@@ -546,14 +548,13 @@ static bool spawn_worker(int sockets[2]) {
   int err = posix_spawnp(&pid, worker_path, nullptr, nullptr, (char* const*)args, environ);
   if (err == 0) {
     KJ_LOG(INFO, "started worker process", pid);
+    return pid;
   } else {
     KJ_LOG(FATAL, "unable to start worker process", strerror(errno));
     KJ_SYSCALL(close(sockets[0]));
     KJ_SYSCALL(close(sockets[1]));
-    return false;
+    return -1;
   }
-
-  return true;
 }
 
 //TODO: is it safe to throw exceptions here?
@@ -562,7 +563,8 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
   KJ_DLOG(INFO, "CreateCdmInstance", cdm_interface_version, key_system, key_system_size, reinterpret_cast<void*>(get_cdm_host_func), user_data);
 
   int sockets[2];
-  if (!spawn_worker(sockets)) {
+  pid_t pid = spawn_worker(sockets);
+  if (pid == -1) {
     return nullptr;
   }
 
@@ -598,7 +600,7 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
     KJ_FAIL_SYSCALL("mmap", errno);
   }
 
-  return reinterpret_cast<void*>(new CdmWrapper(io, kj::mv(stream), kj::mv(client), kj::mv(cdm), host, kj::mv(allocator), decrypted_buffers));
+  return reinterpret_cast<void*>(new CdmWrapper(pid, io, kj::mv(stream), kj::mv(client), kj::mv(cdm), host, kj::mv(allocator), decrypted_buffers));
 }
 
 CDM_API const char* GetCdmVersion() {
@@ -609,22 +611,29 @@ CDM_API const char* GetCdmVersion() {
   if (version == nullptr) {
 
     int sockets[2];
-    if (!spawn_worker(sockets)) {
+    pid_t pid = spawn_worker(sockets);
+    if (pid == -1) {
       return nullptr;
     }
 
-    KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
-    KJ_DEFER(KJ_SYSCALL(close(sockets[1])));
+    {
+      KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
+      KJ_DEFER(KJ_SYSCALL(close(sockets[1])));
 
-    auto stream = io.lowLevelProvider->wrapUnixSocketFd(sockets[0]);
-    capnp::TwoPartyClient client(*stream, 1 /* maxFdsPerMessage */);
+      auto stream = io.lowLevelProvider->wrapUnixSocketFd(sockets[0]);
+      capnp::TwoPartyClient client(*stream, 1 /* maxFdsPerMessage */);
 
-    auto worker   = client.bootstrap().castAs<CdmWorker>();
-    auto request  = worker.getCdmVersionRequest();
-    auto response = request.send().wait(io.waitScope);
+      auto worker   = client.bootstrap().castAs<CdmWorker>();
+      auto request  = worker.getCdmVersionRequest();
+      auto response = request.send().wait(io.waitScope);
 
-    version = strdup(response.getVersion().cStr());
+      version = strdup(response.getVersion().cStr());
+    }
+
+    int status;
+    KJ_SYSCALL(waitpid(pid, &status, 0));
   }
+
   KJ_LOG(INFO, version);
 
   return version;
