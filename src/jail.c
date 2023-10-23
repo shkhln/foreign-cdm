@@ -231,6 +231,8 @@ int main(int argc, char* argv[]) {
     int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
     if (jid == -1) {
       errx(EXIT_FAILURE, "%s", jail_errmsg);
+    } else {
+      warnx("spawned jail %d", jid);
     }
 
     jailparam_free(params, nitems(params));
@@ -268,6 +270,13 @@ int main(int argc, char* argv[]) {
       char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
       execve("/opt/worker", arg, env);
     } else {
+
+      if (setup_marker_fd > 3) {
+        dup2(setup_marker_fd, 3);
+      }
+
+      closefrom(4);
+
       char* const env[] = { "PATH=/bin", NULL };
       execve("/bin/sh", argv, env);
     }
@@ -296,7 +305,30 @@ int main(int argc, char* argv[]) {
     int e = close(pid_fd);
     assert(e == 0);
 
-    // curiously enough we can't unmount .setup-done while cwd is FCDM_JAIL_DIR
+    // let's wait until there are no dying jails
+    struct jailparam params[1];
+
+    int lastjid = 0;
+    jailparam_init      (&params[0], "lastjid");
+    jailparam_import_raw(&params[0], &lastjid, sizeof(lastjid));
+
+    int sleeped_s = 0;
+    while (true) {
+
+      if (jailparam_get(params, nitems(params), JAIL_DYING) == -1) {
+        break;
+      }
+
+      if (sleeped_s >= 60) {
+        errx(EXIT_FAILURE, "skipping cleanup");
+      }
+
+      sleep(1);
+      sleeped_s += 1;
+    }
+
+    jailparam_free(params, nitems(params));
+
     xchdir(home_path);
 
     static const char* paths[] = {
