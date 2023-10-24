@@ -203,7 +203,7 @@ int main(int argc, char* argv[]) {
       xcreat(".setup-done", 0444);
 
       xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
-      xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY);
+      xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER);
   } else {
     // this is both a bit racy and doesn't take into account other potential reasons for EBUSY
     warnx("assuming %s/%s is already mounted", home_path, FCDM_JAIL_DIR);
@@ -221,6 +221,11 @@ int main(int argc, char* argv[]) {
     int setup_marker_fd = open(".setup-done", O_RDONLY);
     if (setup_marker_fd == -1) {
       err(EXIT_FAILURE, "open(.setup-done)");
+    }
+
+    // checking whether our mount points are still intact
+    if (xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER)) {
+      errx(EXIT_FAILURE, "whoops");
     }
 
     struct jailparam params[1];
@@ -305,33 +310,10 @@ int main(int argc, char* argv[]) {
     int e = close(pid_fd);
     assert(e == 0);
 
-    // let's wait until there are no dying jails
-    struct jailparam params[1];
-
-    int lastjid = 0;
-    jailparam_init      (&params[0], "lastjid");
-    jailparam_import_raw(&params[0], &lastjid, sizeof(lastjid));
-
-    int sleeped_s = 0;
-    while (true) {
-
-      if (jailparam_get(params, nitems(params), JAIL_DYING) == -1) {
-        break;
-      }
-
-      if (sleeped_s >= 60) {
-        errx(EXIT_FAILURE, "skipping cleanup");
-      }
-
-      sleep(1);
-      sleeped_s += 1;
-    }
-
-    jailparam_free(params, nitems(params));
-
+    warnx("cleanup [%d]", getpid());
     xchdir(home_path);
 
-    static const char* paths[] = {
+    const char* paths[] = {
       FCDM_JAIL_DIR "/.setup-done",
       FCDM_JAIL_DIR "/bin",
       FCDM_JAIL_DIR "/dev",
@@ -343,18 +325,33 @@ int main(int argc, char* argv[]) {
       FCDM_JAIL_DIR "/usr",
       FCDM_JAIL_DIR "/opt/cdm.so",
       FCDM_JAIL_DIR "/opt/worker",
-      FCDM_JAIL_DIR
     };
 
     for (unsigned int i = 0; i < nitems(paths); i++) {
       if (unmount(paths[i], 0) == -1) {
         warn("can't unmount %s/%s", home_path, paths[i]);
         if (i == 0 && errno == EBUSY) {
-          break;
+          goto done;
         }
       }
     }
 
+    // FCDM_JAIL_DIR can't be unmounted while the jail is in the dying state
+    int sleeped_ms = 0;
+    while (unmount(FCDM_JAIL_DIR, 0) == -1) {
+
+      //~ warn("can't unmount %s/%s", home_path, FCDM_JAIL_DIR);
+
+      if (errno != EBUSY || sleeped_ms >= 10000) {
+        char* reason = errno != EBUSY ? strerror(errno) : "timeout";
+        errx(EXIT_FAILURE, "unable to unmount %s/%s: %s", home_path, FCDM_JAIL_DIR, reason);
+      }
+
+      usleep(100000);
+      sleeped_ms += 100;
+    }
+
+done:
     return WEXITSTATUS(kev.data);
   }
 }
