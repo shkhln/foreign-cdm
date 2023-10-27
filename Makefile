@@ -50,7 +50,7 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
 
 build/fcdm-jail: src/config.h src/jail.c
 	mkdir -p build
-	$(CC) $(CFLAGS) -ljail -o $(.TARGET) src/jail.c && chmod a+srX $(.TARGET)
+	$(CC) $(CFLAGS) -ljail -lutil -o $(.TARGET) src/jail.c && chmod a+srX $(.TARGET)
 
 build/fcdm-cleanup: src/config.h src/cleanup.c
 	mkdir -p build

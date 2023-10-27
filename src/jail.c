@@ -12,6 +12,7 @@
 #include <sys/param.h>
 #include <sys/conf.h>
 #include <sys/event.h>
+#include <sys/file.h>
 #include <sys/jail.h>
 #include <sys/mount.h>
 #include <sys/procdesc.h>
@@ -19,6 +20,7 @@
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 #include <jail.h>
+#include <libutil.h>
 
 #include "config.h"
 
@@ -153,7 +155,14 @@ int main(int argc, char* argv[]) {
 
   xchdir(home_path);
 
-  //TODO: XDG guidlines?
+  int lock_fd = flopen(FCDM_LOCKFILE, O_CREAT, 0444);
+  if (lock_fd == -1) {
+    err(EXIT_FAILURE, "flopen");
+  }
+
+  fchown(lock_fd, getuid(), getgid());
+
+  //TODO: XDG guidelines?
   mkdir(FCDM_JAIL_DIR, 0555);
   chown(FCDM_JAIL_DIR, getuid(), getgid());
 
@@ -205,8 +214,11 @@ int main(int argc, char* argv[]) {
       xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
       xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER);
   } else {
-    // this is both a bit racy and doesn't take into account other potential reasons for EBUSY
-    warnx("assuming %s/%s is already mounted", home_path, FCDM_JAIL_DIR);
+    warnx("assuming %s/%s is already mounted [pid = %d]", home_path, FCDM_JAIL_DIR, getpid());
+  }
+
+  if (flock(lock_fd, LOCK_UN) == -1) {
+    err(EXIT_FAILURE, "flock");
   }
 
   int pid_fd;
@@ -217,15 +229,12 @@ int main(int argc, char* argv[]) {
 
   if (pid == 0) {
 
+    assert(!xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER));
+
     // we keep this file open to make unmounting it fail with EBUSY until the jailed process is gone
     int setup_marker_fd = open(".setup-done", O_RDONLY);
     if (setup_marker_fd == -1) {
       err(EXIT_FAILURE, "open(.setup-done)");
-    }
-
-    // checking whether our mount points are still intact
-    if (xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER)) {
-      errx(EXIT_FAILURE, "whoops");
     }
 
     struct jailparam params[1];
@@ -310,41 +319,48 @@ int main(int argc, char* argv[]) {
     int e = close(pid_fd);
     assert(e == 0);
 
-    warnx("cleanup [%d]", getpid());
+    if (flock(lock_fd, LOCK_EX) == -1) {
+      err(EXIT_FAILURE, "flock");
+    }
+
+    warnx("starting cleanup [pid = %d]", getpid());
+
     xchdir(home_path);
+    xchdir(FCDM_JAIL_DIR);
 
     const char* paths[] = {
-      FCDM_JAIL_DIR "/.setup-done",
-      FCDM_JAIL_DIR "/bin",
-      FCDM_JAIL_DIR "/dev",
-      FCDM_JAIL_DIR "/etc",
-      FCDM_JAIL_DIR "/lib",
-      FCDM_JAIL_DIR "/lib64",
-      FCDM_JAIL_DIR "/proc",
-      FCDM_JAIL_DIR "/sys",
-      FCDM_JAIL_DIR "/usr",
-      FCDM_JAIL_DIR "/opt/cdm.so",
-      FCDM_JAIL_DIR "/opt/worker",
+      ".setup-done",
+      "bin",
+      "dev",
+      "etc",
+      "lib",
+      "lib64",
+      "proc",
+      "sys",
+      "usr",
+      "opt/cdm.so",
+      "opt/worker",
     };
 
     for (unsigned int i = 0; i < nitems(paths); i++) {
       if (unmount(paths[i], 0) == -1) {
-        warn("can't unmount %s/%s", home_path, paths[i]);
         if (i == 0 && errno == EBUSY) {
+          warnx("aborting cleanup [pid = %d]", getpid());
           goto done;
+        } else {
+          warn("can't unmount %s/%s/%s", home_path, FCDM_JAIL_DIR, paths[i]);
         }
       }
     }
 
+    xchdir(home_path);
+
     // FCDM_JAIL_DIR can't be unmounted while the jail is in the dying state
     int sleeped_ms = 0;
     while (unmount(FCDM_JAIL_DIR, 0) == -1) {
-
-      //~ warn("can't unmount %s/%s", home_path, FCDM_JAIL_DIR);
-
       if (errno != EBUSY || sleeped_ms >= 10000) {
         char* reason = errno != EBUSY ? strerror(errno) : "timeout";
-        errx(EXIT_FAILURE, "unable to unmount %s/%s: %s", home_path, FCDM_JAIL_DIR, reason);
+        errx(EXIT_FAILURE, "unable to unmount %s/%s: %s [pid = %d]", home_path, FCDM_JAIL_DIR, reason, getpid());
       }
 
       usleep(100000);
@@ -352,6 +368,7 @@ int main(int argc, char* argv[]) {
     }
 
 done:
+    warnx("cleanup done [pid = %d]", getpid());
     return WEXITSTATUS(kev.data);
   }
 }
