@@ -113,14 +113,18 @@ static void xchdir(const char* path) {
   }
 }
 
+static void xclose(int fd) {
+  int e = close(fd);
+  assert(e == 0);
+}
+
 static void xcreat(char* path, int mode) {
   int fd = open(path, O_CREAT | O_WRONLY, mode);
   if (fd == -1) {
     err(EXIT_FAILURE, "can't create %s", path);
   }
 
-  int e = close(fd);
-  assert(e == 0);
+  xclose(fd);
 }
 
 static void xmkdir(const char* path, mode_t mode) {
@@ -217,10 +221,6 @@ int main(int argc, char* argv[]) {
     warnx("assuming %s/%s is already mounted [pid = %d]", home_path, FCDM_JAIL_DIR, getpid());
   }
 
-  if (flock(lock_fd, LOCK_UN) == -1) {
-    err(EXIT_FAILURE, "flock");
-  }
-
   int pid_fd;
   pid_t pid = pdfork(&pid_fd, 0);
   if (pid == -1) {
@@ -235,6 +235,10 @@ int main(int argc, char* argv[]) {
     int setup_marker_fd = open(".setup-done", O_RDONLY);
     if (setup_marker_fd == -1) {
       err(EXIT_FAILURE, "open(.setup-done)");
+    }
+
+    if (flock(lock_fd, LOCK_UN) == -1) {
+      err(EXIT_FAILURE, "flock");
     }
 
     struct jailparam params[1];
@@ -316,8 +320,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    int e = close(pid_fd);
-    assert(e == 0);
+    xclose(pid_fd);
 
     if (flock(lock_fd, LOCK_EX) == -1) {
       err(EXIT_FAILURE, "flock");
