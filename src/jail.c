@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
 
   int lock_fd = flopen(FCDM_LOCKFILE, O_CREAT, 0444);
   if (lock_fd == -1) {
-    err(EXIT_FAILURE, "flopen");
+    err(EXIT_FAILURE, "unable to lock " FCDM_LOCKFILE " for the mount point setup");
   }
 
   fchown(lock_fd, getuid(), getgid());
@@ -218,7 +218,7 @@ int main(int argc, char* argv[]) {
       xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER);
   } else {
     warnx("assuming %s/%s is already mounted [pid = %d]", home_path, FCDM_JAIL_DIR, getpid());
-    assert(!xmount("nullfs", ".setup-done", ".setup-done", MNT_NOCOVER));
+    assert(access(".setup-done", F_OK) == 0);
   }
 
   int pid_fd;
@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (flock(lock_fd, LOCK_UN) == -1) {
-      err(EXIT_FAILURE, "flock");
+      err(EXIT_FAILURE, "unable to unlock " FCDM_LOCKFILE);
     }
 
     struct jailparam params[1];
@@ -321,30 +321,32 @@ int main(int argc, char* argv[]) {
     xclose(pid_fd);
 
     if (flock(lock_fd, LOCK_EX) == -1) {
-      err(EXIT_FAILURE, "flock");
+      err(EXIT_FAILURE, "unable to lock " FCDM_LOCKFILE " for cleanup");
     }
 
-    if (unmount(".setup-done", 0) == 0) {
+    xchdir(home_path);
+
+    if (unmount(FCDM_JAIL_DIR "/.setup-done", 0) == 0) {
 
       const char* paths[] = {
-        "bin",
-        "dev",
-        "etc",
-        "lib",
-        "lib64",
-        "proc",
-        "sys",
-        "usr",
-        "opt/cdm.so",
-        "opt/worker",
-        "."
+        FCDM_JAIL_DIR "/bin",
+        FCDM_JAIL_DIR "/dev",
+        FCDM_JAIL_DIR "/etc",
+        FCDM_JAIL_DIR "/lib",
+        FCDM_JAIL_DIR "/lib64",
+        FCDM_JAIL_DIR "/proc",
+        FCDM_JAIL_DIR "/sys",
+        FCDM_JAIL_DIR "/usr",
+        FCDM_JAIL_DIR "/opt/cdm.so",
+        FCDM_JAIL_DIR "/opt/worker",
+        FCDM_JAIL_DIR
       };
 
       for (unsigned int i = 0; i < nitems(paths); i++) {
         if (unmount(paths[i], 0) == -1) {
-          warnx("force unmounting %s/%s/%s", home_path, FCDM_JAIL_DIR, paths[i]);
+          warnx("force unmounting %s/%s", home_path, paths[i]);
           if (unmount(paths[i], MNT_FORCE) == -1) {
-            warn("can't unmount %s/%s/%s", home_path, FCDM_JAIL_DIR, paths[i]);
+            warn("can't unmount %s/%s", home_path, paths[i]);
           }
         }
       }
