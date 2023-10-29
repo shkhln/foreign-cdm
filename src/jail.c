@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -215,7 +214,7 @@ int main(int argc, char* argv[]) {
       xcreat(".setup-done", 0444);
 
       xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
-      xmount("nullfs", ".setup-done", ".setup-done", MNT_RDONLY | MNT_NOCOVER);
+      xmount("nullfs", ".setup-done", ".setup-done", 0);
   } else {
     warnx("assuming %s/%s is already mounted [pid = %d]", home_path, FCDM_JAIL_DIR, getpid());
     assert(access(".setup-done", F_OK) == 0);
