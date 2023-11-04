@@ -136,16 +136,21 @@ int main(int argc, char* argv[]) {
 
   assert(geteuid() == UID_ROOT);
 
-  char* home_path   = getenv("HOME");
+  char* rdir_path = getenv("XDG_RUNTIME_DIR");
+
+  if (rdir_path == NULL) {
+    warnx("XDG_RUNTIME_DIR is undefined, using HOME instead");
+    rdir_path = getenv("HOME");
+    if (rdir_path == NULL) {
+      errx(EXIT_FAILURE, "HOME is undefined");
+    }
+  }
+
   char* libcdm_path = getenv("FCDM_CDM_SO_PATH");
   char* worker_path = getenv("FCDM_WORKER_PATH");
 
-  if (home_path == NULL) {
-    errx(EXIT_FAILURE, "HOME is undefined");
-  }
-
-  if (access(home_path, R_OK | W_OK | X_OK) == -1) {
-    err(EXIT_FAILURE, "can't access %s", home_path);
+  if (access(rdir_path, R_OK | W_OK | X_OK) == -1) {
+    err(EXIT_FAILURE, "can't access %s", rdir_path);
   }
 
   if (libcdm_path != NULL && access(libcdm_path, R_OK) == -1) {
@@ -156,7 +161,7 @@ int main(int argc, char* argv[]) {
     err(EXIT_FAILURE, "can't access %s", worker_path);
   }
 
-  xchdir(home_path);
+  xchdir(rdir_path);
 
   int lock_fd = flopen(FCDM_LOCKFILE, O_CREAT, 0444);
   if (lock_fd == -1) {
@@ -165,7 +170,6 @@ int main(int argc, char* argv[]) {
 
   fchown(lock_fd, getuid(), getgid());
 
-  //TODO: XDG guidelines?
   mkdir(FCDM_JAIL_DIR, 0555);
   chown(FCDM_JAIL_DIR, getuid(), getgid());
 
@@ -216,7 +220,7 @@ int main(int argc, char* argv[]) {
       xmount("tmpfs",  "tmpfs",       ".",           MNT_RDONLY | MNT_UPDATE);
       xmount("nullfs", ".setup-done", ".setup-done", 0);
   } else {
-    warnx("assuming %s/%s is already mounted [pid = %d]", home_path, FCDM_JAIL_DIR, getpid());
+    warnx("assuming %s/%s is already mounted [pid = %d]", rdir_path, FCDM_JAIL_DIR, getpid());
     assert(access(".setup-done", F_OK) == 0);
   }
 
@@ -323,7 +327,7 @@ int main(int argc, char* argv[]) {
       err(EXIT_FAILURE, "unable to lock " FCDM_LOCKFILE " for cleanup");
     }
 
-    xchdir(home_path);
+    xchdir(rdir_path);
 
     if (unmount(FCDM_JAIL_DIR "/.setup-done", 0) == 0) {
 
@@ -343,9 +347,9 @@ int main(int argc, char* argv[]) {
 
       for (unsigned int i = 0; i < nitems(paths); i++) {
         if (unmount(paths[i], 0) == -1) {
-          warnx("force unmounting %s/%s", home_path, paths[i]);
+          warnx("force unmounting %s/%s", rdir_path, paths[i]);
           if (unmount(paths[i], MNT_FORCE) == -1) {
-            warn("can't unmount %s/%s", home_path, paths[i]);
+            warn("can't unmount %s/%s", rdir_path, paths[i]);
           }
         }
       }
