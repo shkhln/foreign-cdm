@@ -539,49 +539,33 @@ static pid_t spawn_worker(int sockets[2]) {
   extern char** environ;
 
 #ifndef DISABLE_FCDM_JAIL
-  auto jail_wrapper_path = kj::str(bindir_path, "/fcdm-jail");
-  auto worker_path       = kj::str(bindir_path, "/fcdm-worker");
-
+  auto process_path = kj::str(bindir_path, "/fcdm-jail");
   const char* const args[] = {
     "fcdm-jail",
     socket_fd_str,
     nullptr
   };
-
-  KJ_SYSCALL(setenv("FCDM_WORKER_PATH", worker_path.cStr(), 1));
-
-  pid_t pid;
-  int err = posix_spawn(&pid, jail_wrapper_path.cStr(), nullptr, nullptr, const_cast<char* const*>(args), environ);
-  if (err == 0) {
-    KJ_LOG(INFO, "started worker jail process", pid);
-    return pid;
-  } else {
-    KJ_LOG(FATAL, "unable to start worker jail process", jail_wrapper_path, strerror(errno));
-    KJ_SYSCALL(close(sockets[0]));
-    KJ_SYSCALL(close(sockets[1]));
-    return -1;
-  }
+  KJ_SYSCALL(setenv("FCDM_WORKER_PATH", kj::str(bindir_path, "/fcdm-worker").cStr(), 1));
 #else
-  auto worker_path = kj::str(bindir_path, "/fcdm-worker");
-
+  auto process_path = kj::str(bindir_path, "/fcdm-worker");
   const char* const args[] = {
     "fcdm-worker",
     socket_fd_str,
     nullptr
   };
+#endif
 
   pid_t pid;
-  int err = posix_spawn(&pid, worker_path.cStr(), nullptr, nullptr, const_cast<char* const*>(args), environ);
+  int err = posix_spawn(&pid, process_path.cStr(), nullptr, nullptr, const_cast<char* const*>(args), environ);
   if (err == 0) {
-    KJ_LOG(INFO, "started worker process", pid);
+    KJ_LOG(INFO, "started process", pid);
     return pid;
   } else {
-    KJ_LOG(FATAL, "unable to start worker process", worker_path, strerror(errno));
+    KJ_LOG(FATAL, "unable to start", process_path, strerror(errno));
     KJ_SYSCALL(close(sockets[0]));
     KJ_SYSCALL(close(sockets[1]));
     return -1;
   }
-#endif
 }
 
 //TODO: is it safe to throw exceptions here?
