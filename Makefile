@@ -4,7 +4,7 @@ LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O2 -std=c++17 --sysroot=/
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
 MAKE_JOBS_NUMBER ?= 1
 
-all: build/fcdm-fbsd.so build/fcdm-worker build/fcdm-jail build/fcdm-cleanup
+all: build/fcdm-fbsd.so build/fcdm-worker build/fcdm-jail
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
@@ -51,10 +51,6 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
 build/fcdm-jail: src/config.h src/jail.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -ljail -lutil -o $(.TARGET) src/jail.c && chmod a+srX $(.TARGET)
-
-build/fcdm-cleanup: src/config.h src/cleanup.c
-	mkdir -p build
-	$(CC) $(CFLAGS) -o $(.TARGET) src/cleanup.c && chmod a+srX $(.TARGET)
 
 src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
 	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-fbsd/c++/src/capnp/capnpc-c++ src/cdm.capnp
