@@ -536,8 +536,6 @@ static pid_t spawn_worker(int sockets[2]) {
   char socket_fd_str[11];
   snprintf(socket_fd_str, sizeof(socket_fd_str), "%d", sockets[1]);
 
-  extern char** environ;
-
 #ifndef DISABLE_FCDM_JAIL
   auto process_path = kj::str(bindir_path, "/fcdm-jail");
   const char* const args[] = {
@@ -554,6 +552,8 @@ static pid_t spawn_worker(int sockets[2]) {
     nullptr
   };
 #endif
+
+  extern char** environ;
 
   pid_t pid;
   int err = posix_spawn(&pid, process_path.cStr(), nullptr, nullptr, const_cast<char* const*>(args), environ);
