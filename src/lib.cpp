@@ -278,8 +278,9 @@ public:
     KJ_SYSCALL(munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE));
     m_client.~Own();
     m_stream.~Own();
-    int status;
-    KJ_SYSCALL(waitpid(m_worker_pid, &status, 0));
+    //TODO: fix this
+    //~ int status;
+    //~ KJ_SYSCALL(waitpid(m_worker_pid, &status, 0));
   }
 
   CdmWrapper(pid_t worker_pid, kj::AsyncIoContext& io, kj::Own<kj::AsyncCapabilityStream> stream, kj::Own<capnp::TwoPartyClient> client,
