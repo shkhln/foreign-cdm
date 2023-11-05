@@ -71,6 +71,7 @@ clean:
 	rm -f build/fcdm-fbsd.so
 	rm -f build/fcdm-linux.so
 	rm -f build/fcdm-worker
+	rm -f build/fcdm-jail
 
 clean-all: clean
 	rm -f capnp-fbsd
