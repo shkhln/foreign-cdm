@@ -221,7 +221,16 @@ int main(int argc, char* argv[]) {
       xmount("nullfs", ".setup-done", ".setup-done", 0);
   } else {
     warnx("assuming %s/%s is already mounted [pid = %d]", rdir_path, FCDM_JAIL_DIR, getpid());
-    assert(access(".setup-done", F_OK) == 0);
+  }
+
+  // we keep this file open while the jail is running to make unmount(".setup-done") fail with EBUSY
+  int setup_marker_fd = open(".setup-done", O_RDONLY);
+  if (setup_marker_fd == -1) {
+    err(EXIT_FAILURE, "open(\".setup-done\")");
+  }
+
+  if (flock(lock_fd, LOCK_UN) == -1) {
+    err(EXIT_FAILURE, "unable to unlock " FCDM_LOCKFILE);
   }
 
   int pid_fd;
@@ -231,16 +240,6 @@ int main(int argc, char* argv[]) {
   }
 
   if (pid == 0) {
-
-    // we keep this file open to make unmounting it fail with EBUSY until the jailed process is gone
-    int setup_marker_fd = open(".setup-done", O_RDONLY);
-    if (setup_marker_fd == -1) {
-      err(EXIT_FAILURE, "open(.setup-done)");
-    }
-
-    if (flock(lock_fd, LOCK_UN) == -1) {
-      err(EXIT_FAILURE, "unable to unlock " FCDM_LOCKFILE);
-    }
 
     struct jailparam params[1];
 
@@ -272,25 +271,15 @@ int main(int argc, char* argv[]) {
       intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
       assert(errno != ERANGE && errno != EINVAL);
 
-      if (setup_marker_fd < 5) {
-        setup_marker_fd = dup(setup_marker_fd);
-      }
+      dup2(socket_fd, 3);
+      closefrom(4);
 
-      if (socket_fd < 5) {
-        socket_fd = dup(socket_fd);
-      }
-
-      dup2(setup_marker_fd, 3);
-      dup2(socket_fd, 4);
-      closefrom(5);
-
-      char* const arg[] = { "fcdm-worker", "4", NULL };
+      char* const arg[] = { "fcdm-worker", "3", NULL };
       char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
       execve("/opt/worker", arg, env);
     } else {
 
-      dup2(setup_marker_fd, 3);
-      closefrom(4);
+      closefrom(3);
 
       char* const env[] = { "PATH=/bin", NULL };
       execve("/bin/sh", argv, env);
@@ -318,6 +307,7 @@ int main(int argc, char* argv[]) {
     }
 
     xclose(pid_fd);
+    xclose(setup_marker_fd);
 
     if (flock(lock_fd, LOCK_EX) == -1) {
       err(EXIT_FAILURE, "unable to lock " FCDM_LOCKFILE " for cleanup");
