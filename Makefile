@@ -1,10 +1,17 @@
 
-LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-9/root/usr/bin/g++
-LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O2 -std=c++17 --sysroot=/compat/linux
+LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-9/root/usr/bin/gcc
+LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c99
+LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c++17
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
 MAKE_JOBS_NUMBER ?= 1
 
-all: build/fcdm-fbsd.so build/fcdm-worker build/fcdm-jail
+.PHONY: all fcdm lcdm util clean clean-all
+
+fcdm: build/fcdm-fbsd.so build/fcdm-worker build/fcdm-jail
+lcdm: build/fcdm-linux.so
+util: build/override-fbsd.so build/override-linux.so
+
+all: fcdm lcdm util
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
@@ -22,7 +29,7 @@ build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/ca
 
 build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
-	$(LINUX_CC) $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
+	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-linux/c++/src/capnp/libcapnpc.a \
  build/capnp-linux/c++/src/capnp/libcapnp-rpc.a \
@@ -36,7 +43,7 @@ build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/c
 
 build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
-	$(LINUX_CC) $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -o $(.TARGET) \
+	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-linux/c++/src/capnp/libcapnpc.a \
  build/capnp-linux/c++/src/capnp/libcapnp-rpc.a \
@@ -51,6 +58,14 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
 build/fcdm-jail: src/config.h src/jail.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -ljail -lutil -o $(.TARGET) src/jail.c && chmod a+srX $(.TARGET)
+
+build/override-fbsd.so: src/override.c
+	mkdir -p build
+	$(CC) $(CFLAGS) -fPIC -shared -o $(.TARGET) src/override.c && chmod a+rX $(.TARGET)
+
+build/override-linux.so: src/override.c
+	mkdir -p build
+	${LINUX_CC:S|g++$|gcc|} $(LINUX_CFLAGS) -fPIC -shared -o $(.TARGET) src/override.c -ldl && chmod a+rX $(.TARGET)
 
 src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
 	./build/capnp-fbsd/c++/src/capnp/capnp compile -obuild/capnp-fbsd/c++/src/capnp/capnpc-c++ src/cdm.capnp
@@ -72,6 +87,8 @@ clean:
 	rm -f build/fcdm-linux.so
 	rm -f build/fcdm-worker
 	rm -f build/fcdm-jail
+	rm -f build/override-fbsd.so
+	rm -f build/override-linux.so
 
 clean-all: clean
 	rm -f capnp-fbsd
