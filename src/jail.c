@@ -216,9 +216,10 @@ int main(int argc, char* argv[]) {
       }
 
       xcreat(".setup-done", 0444);
+      xcreat(".whatever",   0444);
+      xmount("nullfs", ".whatever", ".setup-done", 0);
 
-      xmount("tmpfs",  "tmpfs",       ".",           MNT_NOEXEC | MNT_RDONLY | MNT_UPDATE);
-      xmount("nullfs", ".setup-done", ".setup-done", 0);
+      xmount("tmpfs", "tmpfs", ".", MNT_NOEXEC | MNT_RDONLY | MNT_UPDATE);
   } else {
     warnx("assuming %s/%s is already mounted [pid = %d]", rdir_path, FCDM_JAIL_DIR, getpid());
   }
