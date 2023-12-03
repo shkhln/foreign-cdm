@@ -1,5 +1,5 @@
 
-LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-9/root/usr/bin/gcc
+LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin/gcc
 LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c99
 LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c++17
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
