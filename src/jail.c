@@ -108,7 +108,7 @@ static bool xmount(const char* fstype, const char* from, const char* to, unsigne
 
 static void xchdir(const char* path) {
   if (chdir(path) == -1) {
-    err(EXIT_FAILURE, "chdir(%s)", path);
+    err(EXIT_FAILURE, "chdir(\"%s\")", path);
   }
 }
 
@@ -128,7 +128,7 @@ static void xcreat(char* path, int mode) {
 
 static void xmkdir(const char* path, mode_t mode) {
   if (mkdir(path, mode) == -1) {
-    err(EXIT_FAILURE, "mkdir(%s)", path);
+    err(EXIT_FAILURE, "mkdir(\"%s\")", path);
   }
 }
 
@@ -249,7 +249,7 @@ int main(int argc, char* argv[]) {
 
     int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
     if (jid == -1) {
-      errx(EXIT_FAILURE, "%s", jail_errmsg);
+      err(EXIT_FAILURE, "jailparam_set: %s", jail_errmsg);
     } else {
       warnx("spawned jail %d", jid);
     }
