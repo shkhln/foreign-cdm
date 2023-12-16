@@ -242,11 +242,40 @@ int main(int argc, char* argv[]) {
 
   if (pid == 0) {
 
+    char*  exe;
+    char** arg;
+    char** env;
+
+    if (argc > 1) {
+
+      errno = 0;
+      intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
+      assert(errno != ERANGE && errno != EINVAL);
+
+      dup2(socket_fd, 3);
+      closefrom(4);
+
+      exe = "/opt/worker";
+      arg = (char* []){ "fcdm-worker", "3", NULL };
+      env = (char* []){ "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
+
+    } else {
+
+      closefrom(3);
+
+      exe = "/bin/sh";
+      arg = (char* []){ exe, NULL };
+      env = (char* []){ "PATH=/bin", NULL };
+    }
+
     struct jailparam params[1];
 
     jailparam_init  (&params[0], "path");
     jailparam_import(&params[0], ".");
 
+    // Note that pwd_chroot_chdir (used internally by jail_set) returns EPERM
+    // if there are any open directories, so it's important to close all such fds.
+    // (It also ignores the kern.chroot_allow_open_directories sysctl.)
     int jid = jailparam_set(params, nitems(params), JAIL_CREATE | JAIL_ATTACH);
     if (jid == -1) {
       err(EXIT_FAILURE, "jailparam_set: %s", jail_errmsg);
@@ -266,25 +295,7 @@ int main(int argc, char* argv[]) {
       err(EXIT_FAILURE, "setresuid");
     }
 
-    if (argc > 1) {
-
-      errno = 0;
-      intmax_t socket_fd = strtoimax(argv[1], NULL, 10);
-      assert(errno != ERANGE && errno != EINVAL);
-
-      dup2(socket_fd, 3);
-      closefrom(4);
-
-      char* const arg[] = { "fcdm-worker", "3", NULL };
-      char* const env[] = { "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
-      execve("/opt/worker", arg, env);
-    } else {
-
-      closefrom(3);
-
-      char* const env[] = { "PATH=/bin", NULL };
-      execve("/bin/sh", argv, env);
-    }
+    execve(exe, arg, env);
     err(EXIT_FAILURE, "execve");
 
   } else {
