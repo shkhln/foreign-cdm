@@ -1,5 +1,6 @@
 
 LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin/gcc
+LINUX_LD       ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin/ld.bfd
 LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c99
 LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c++17
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
@@ -25,7 +26,7 @@ build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/ca
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/lib.cpp \
- -pthread && chmod a+rX $(.TARGET)
+ -pthread
 
 build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
@@ -39,7 +40,7 @@ build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/c
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/lib.cpp \
- -pthread -ldl && chmod a+rX $(.TARGET)
+ -pthread -ldl
 
 build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
@@ -53,7 +54,7 @@ build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/
  -Wl,--no-whole-archive \
  src/cdm.capnp.c++ \
  src/worker.cpp \
- -pthread -ldl && chmod a+rX $(.TARGET)
+ -pthread -ldl && chmod a+x $(.TARGET)
 
 build/fcdm-jail: src/config.h src/jail.c
 	mkdir -p build
@@ -72,12 +73,14 @@ src/cdm.capnp.h: src/cdm.capnp build/capnp-fbsd
 
 build/capnp-fbsd:
 	mkdir -p build/capnp-fbsd
-	env CXXFLAGS="$(CXXFLAGS) -include 'netinet/in.h' -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=OFF -DBUILD_TESTING=OFF
+	env CXXFLAGS="$(CXXFLAGS) -include 'netinet/in.h' -fPIC" cmake -S third_party/capnproto -B $(.TARGET) \
+ -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=OFF -DBUILD_TESTING=OFF
 	make -C build/capnp-fbsd -j${MAKE_JOBS_NUMBER}
 
 build/capnp-linux:
 	mkdir -p build/capnp-linux
-	env CXX="$(LINUX_CC)" CXXFLAGS="$(LINUX_CXXFLAGS) -fPIC" cmake -S third_party/capnproto -B $(.TARGET) -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON -DBUILD_TESTING=OFF
+	env CXX="${LINUX_CC:S|gcc$|g++|}" CXXFLAGS="$(LINUX_CXXFLAGS) -fPIC" cmake -S third_party/capnproto -B $(.TARGET) \
+ -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON -DBUILD_TESTING=OFF -DCMAKE_LINKER="$(LINUX_LD)"
 	make -C build/capnp-linux -j${MAKE_JOBS_NUMBER}
 
 clean:
@@ -91,5 +94,5 @@ clean:
 	rm -f build/override-linux.so
 
 clean-all: clean
-	rm -f capnp-fbsd
-	rm -f capnp-linux
+	rm -rf build/capnp-fbsd
+	rm -rf build/capnp-linux
