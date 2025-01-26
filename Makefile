@@ -1,8 +1,7 @@
-
-LINUX_CC       ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin/gcc
-LINUX_LD       ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin/ld.bfd
-LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c99
-LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter --sysroot=/compat/linux -O2 -std=c++17
+LINUX_CC_BIN   ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin
+LINUX_CC       ?= $(LINUX_CC_BIN)/gcc
+LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter -B$(LINUX_CC_BIN) --sysroot=/compat/linux -O2 -std=c99
+LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -B$(LINUX_CC_BIN) --sysroot=/compat/linux -O2 -std=c++17
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
 MAKE_JOBS_NUMBER ?= 1
 
@@ -80,7 +79,7 @@ build/capnp-fbsd:
 build/capnp-linux:
 	mkdir -p build/capnp-linux
 	env CXX="${LINUX_CC:S|gcc$|g++|}" CXXFLAGS="$(LINUX_CXXFLAGS) -fPIC" cmake -S third_party/capnproto -B $(.TARGET) \
- -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON -DBUILD_TESTING=OFF -DCMAKE_LINKER="$(LINUX_LD)"
+ -DWITH_ZLIB=OFF -DWITH_OPENSSL=OFF -DWITH_FIBERS=ON -DBUILD_TESTING=OFF
 	make -C build/capnp-linux -j${MAKE_JOBS_NUMBER}
 
 clean:
