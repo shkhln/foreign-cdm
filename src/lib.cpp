@@ -41,14 +41,14 @@ static uint32_t write_input_buffer(const cdm::InputBuffer_2& source, XAlloc& all
   return allocator.getOffset(reinterpret_cast<uint8_t*>(input_buffer));
 }
 
-class CdmWrapper: public cdm::ContentDecryptionModule_10 {
+class CdmWrapper: public cdm::ContentDecryptionModule_11 {
 
   pid_t                              m_worker_pid;
   kj::AsyncIoContext&                m_io;
   kj::Own<kj::AsyncCapabilityStream> m_stream;
   kj::Own<capnp::TwoPartyClient>     m_client;
   CdmProxy::Client                   m_cdm;
-  cdm::Host_10*                      m_host;
+  cdm::Host_11*                      m_host;
   XAlloc                             m_allocator;
   void*                              m_decrypted_buffers;
 
@@ -284,7 +284,7 @@ public:
   }
 
   CdmWrapper(pid_t worker_pid, kj::AsyncIoContext& io, kj::Own<kj::AsyncCapabilityStream> stream, kj::Own<capnp::TwoPartyClient> client,
-    CdmProxy::Client cdm, cdm::Host_10* host, XAlloc allocator, void* decrypted_buffers) :
+    CdmProxy::Client cdm, cdm::Host_11* host, XAlloc allocator, void* decrypted_buffers) :
       m_worker_pid(worker_pid), m_io(io), m_stream(kj::mv(stream)), m_client(kj::mv(client)),
         m_cdm(kj::mv(cdm)), m_host(host), m_allocator(kj::mv(allocator)), m_decrypted_buffers(decrypted_buffers) {}
 
@@ -374,7 +374,7 @@ public:
 
 class HostProxyImpl final: public HostProxy::Server {
 
-  cdm::Host_10* m_host;
+  cdm::Host_11* m_host;
 
 public:
 
@@ -506,7 +506,16 @@ public:
     return kj::READY_NOW;
   }
 
-  HostProxyImpl(cdm::Host_10* host) : m_host(host) {}
+  kj::Promise<void> reportMetrics(ReportMetricsContext context) override {
+    KJ_DLOG(INFO, "reportMetrics");
+    auto metric_name = static_cast<cdm::MetricName>(context.getParams().getMetricName());
+    auto value       = context.getParams().getValue();
+    m_host->ReportMetrics(metric_name, value);
+    KJ_DLOG(INFO, "exiting reportMetrics");
+    return kj::READY_NOW;
+  }
+
+  HostProxyImpl(cdm::Host_11* host) : m_host(host) {}
 };
 
 __attribute__((constructor))
@@ -587,7 +596,7 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
   auto client = kj::heap<capnp::TwoPartyClient>(*stream, 1 /* maxFdsPerMessage */);
   auto worker = client.get()->bootstrap().castAs<CdmWorker>();
 
-  auto host = reinterpret_cast<cdm::Host_10*>(get_cdm_host_func(cdm_interface_version, user_data));
+  auto host = reinterpret_cast<cdm::Host_11*>(get_cdm_host_func(cdm_interface_version, user_data));
   KJ_ASSERT(host != nullptr);
 
   auto request = worker.createCdmInstanceRequest();

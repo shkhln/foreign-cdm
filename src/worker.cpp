@@ -199,7 +199,7 @@ static void clear_host_context() {
 
 class CdmProxyImpl final: public CdmProxy::Server {
 
-  cdm::ContentDecryptionModule_10* m_cdm;
+  cdm::ContentDecryptionModule_11* m_cdm;
   kj::AutoCloseFd m_memfd;
   XAlloc m_allocator;
   void* m_encrypted_buffers;
@@ -442,7 +442,7 @@ public:
     });
   }
 
-  CdmProxyImpl(cdm::ContentDecryptionModule_10* cdm, kj::AutoCloseFd memfd, XAlloc allocator, void* encrypted_buffers) :
+  CdmProxyImpl(cdm::ContentDecryptionModule_11* cdm, kj::AutoCloseFd memfd, XAlloc allocator, void* encrypted_buffers) :
     m_cdm(cdm), m_memfd(kj::mv(memfd)), m_allocator(kj::mv(allocator)), m_encrypted_buffers(encrypted_buffers) {}
 
   ~CdmProxyImpl() {}
@@ -534,7 +534,7 @@ public:
   FileIOClientProxyImpl(cdm::FileIOClient* client) : m_client(client) {}
 };
 
-class HostWrapper: public cdm::Host_10 {
+class HostWrapper: public cdm::Host_11 {
 
   HostProxy::Client m_host;
 
@@ -684,6 +684,15 @@ public:
     KJ_DLOG(INFO, "exiting RequestStorageId");
   }
 
+  void ReportMetrics(cdm::MetricName metric_name, uint64_t value) override {
+    KJ_DLOG(INFO, "ReportMetrics");
+    auto request = m_host.reportMetricsRequest();
+    request.setMetricName(metric_name);
+    request.setValue(value);
+    auto response = request.send().wait(*host_ctx.scope);
+    KJ_DLOG(INFO, "exiting ReportMetrics");
+  }
+
   HostWrapper(HostProxy::Client&& host) : m_host(host) {}
 
   ~HostWrapper() noexcept {
@@ -703,7 +712,7 @@ GetCdmVersionFunc         get_cdm_ver_func     = nullptr;
 
 static void* get_cdm_host(int host_interface_version, void* user_data) {
   KJ_DLOG(INFO, "get_cdm_host", host_interface_version, user_data);
-  KJ_ASSERT(host_interface_version == 10);
+  KJ_ASSERT(host_interface_version == 11);
   return user_data;
 }
 
@@ -721,7 +730,7 @@ public:
       auto host_proxy            = context.getParams().getHostProxy();
 
       KJ_DLOG(INFO, "createCdmInstance", cdm_interface_version, key_system);
-      KJ_ASSERT(cdm_interface_version == 10);
+      KJ_ASSERT(cdm_interface_version == 11);
 
       if (!cdm_initialized) {
         KJ_LOG(INFO, "cdm version", get_cdm_ver_func());
@@ -754,7 +763,7 @@ public:
       clear_host_context();
       KJ_ASSERT(cdm != nullptr);
 
-      context.getResults().setCdmProxy(kj::heap<CdmProxyImpl>(reinterpret_cast<cdm::ContentDecryptionModule_10*>(cdm), kj::mv(memfd), kj::mv(allocator), encrypted_buffers));
+      context.getResults().setCdmProxy(kj::heap<CdmProxyImpl>(reinterpret_cast<cdm::ContentDecryptionModule_11*>(cdm), kj::mv(memfd), kj::mv(allocator), encrypted_buffers));
 
       KJ_DLOG(INFO, "exiting createCdmInstance");
     });

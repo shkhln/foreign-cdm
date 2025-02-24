@@ -104,4 +104,5 @@ interface HostProxy {
   onDeferredInitializationDone @ 13 (); # TODO
   createFileIO                 @ 14 (client: FileIOClientProxy) -> (fileIO: FileIOProxy);
   requestStorageId             @ 15 (version: UInt32);
+  reportMetrics                @ 16 (metricName: UInt32, value: UInt64);
 }
