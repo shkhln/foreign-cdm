@@ -730,7 +730,7 @@ public:
       auto host_proxy            = context.getParams().getHostProxy();
 
       KJ_DLOG(INFO, "createCdmInstance", cdm_interface_version, key_system);
-      KJ_ASSERT(cdm_interface_version == 10);
+      KJ_ASSERT(cdm_interface_version == 11);
 
       if (!cdm_initialized) {
         KJ_LOG(INFO, "cdm version", get_cdm_ver_func());
