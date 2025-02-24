@@ -15,7 +15,7 @@ all: fcdm lcdm util
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
-	$(CC) $(CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
+	$(CXX) $(CXXFLAGS) -std=c++17 -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-fbsd/c++/src/capnp/libcapnpc.a \
  build/capnp-fbsd/c++/src/capnp/libcapnp-rpc.a \
