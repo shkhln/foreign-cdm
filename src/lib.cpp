@@ -273,11 +273,7 @@ public:
 
   void Destroy() override {
     KJ_DLOG(INFO, "Destroy");
-    //TODO: we can't just use `delete this` because m_cdm.~Client() apparently gives us
-    // "Fatal uncaught kj::Exception: kj/io.c++:331: failed: close: Bad file descriptor"
-    KJ_SYSCALL(munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE));
-    m_client.~Own();
-    m_stream.~Own();
+    delete this;
     //TODO: fix this
     //~ int status;
     //~ KJ_SYSCALL(waitpid(m_worker_pid, &status, 0));
@@ -288,8 +284,10 @@ public:
       m_worker_pid(worker_pid), m_io(io), m_stream(kj::mv(stream)), m_client(kj::mv(client)),
         m_cdm(kj::mv(cdm)), m_host(host), m_allocator(kj::mv(allocator)), m_decrypted_buffers(decrypted_buffers) {}
 
-  ~CdmWrapper() noexcept {
-    //KJ_SYSCALL(munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE));
+  ~CdmWrapper() noexcept override {
+    if (munmap(m_decrypted_buffers, SHMEM_ARENA_SIZE) == -1) {
+      KJ_LOG(ERROR, "munmap failed", strerror(errno));
+    }
   }
 };
 
@@ -589,6 +587,8 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
     return nullptr;
   }
 
+  KJ_DLOG(INFO, "CreateCdmInstance", sockets[0], sockets[1]);
+
   //TODO: who is supposed to close sockets[0]?
   KJ_SYSCALL(close(sockets[1]));
 
@@ -609,7 +609,7 @@ CDM_API void* CreateCdmInstance(int cdm_interface_version, const char* key_syste
   auto cdm = response.getCdmProxy();
 
   int memfd = KJ_ASSERT_NONNULL(cdm.getFd().wait(io.waitScope));
-  KJ_DEFER(KJ_SYSCALL(close(memfd)));
+  KJ_DLOG(INFO, memfd);
 
   XAlloc allocator(memfd, SHMEM_ARENA_SIZE, 0);
 
@@ -636,6 +636,8 @@ CDM_API const char* GetCdmVersion() {
     if (pid == -1) {
       return nullptr;
     }
+
+    KJ_DLOG(INFO, "GetCdmVersion", sockets[0], sockets[1]);
 
     {
       KJ_DEFER(KJ_SYSCALL(close(sockets[0])));
