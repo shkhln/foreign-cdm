@@ -22,7 +22,7 @@ fail once for Chromium to register the CDM.)
 Alternatively, to test this do:
 
 ```
-% pkg install linux-rl9-devtools
+% sudo pkg install linux-rl9-devtools
 % git clone --recurse-submodules <this repo>
 % cd foreign-cdm
 % make all DEBUG=y
