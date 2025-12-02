@@ -1,8 +1,19 @@
+.if exists(/compat/linux/opt/rh/devtoolset-11/root/usr/bin)
 LINUX_CC_BIN   ?= /compat/linux/opt/rh/devtoolset-11/root/usr/bin
+.else
+LINUX_CC_BIN   ?= /compat/linux/bin
+.endif
 LINUX_CC       ?= $(LINUX_CC_BIN)/gcc
 LINUX_CFLAGS   ?= -Wall -Wextra -Wno-unused-parameter -B$(LINUX_CC_BIN) --sysroot=/compat/linux -O2 -std=c99
 LINUX_CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -B$(LINUX_CC_BIN) --sysroot=/compat/linux -O2 -std=c++17
 CFLAGS         += -Wall -Wextra -Wno-unused-parameter
+
+.if defined(DEBUG)
+KJ_DEBUG= -DKJ_DEBUG
+.else
+KJ_DEBUG=
+.endif
+
 MAKE_JOBS_NUMBER ?= 1
 
 .PHONY: all fcdm lcdm util clean clean-all
@@ -15,7 +26,7 @@ all: fcdm lcdm util
 
 build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-fbsd
 	mkdir -p build
-	$(CXX) $(CXXFLAGS) -std=c++17 -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
+	$(CXX) $(CXXFLAGS) -std=c++17 $(KJ_DEBUG) -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-fbsd/c++/src/capnp/libcapnpc.a \
  build/capnp-fbsd/c++/src/capnp/libcapnp-rpc.a \
@@ -29,7 +40,7 @@ build/fcdm-fbsd.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/ca
 
 build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
-	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
+	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) $(KJ_DEBUG) -Ithird_party -Ithird_party/capnproto/c++/src -fPIC -shared -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-linux/c++/src/capnp/libcapnpc.a \
  build/capnp-linux/c++/src/capnp/libcapnp-rpc.a \
@@ -43,7 +54,7 @@ build/fcdm-linux.so: src/config.h src/lib.cpp src/util.h src/cdm.capnp.h build/c
 
 build/fcdm-worker: src/config.h src/worker.cpp src/util.h src/cdm.capnp.h build/capnp-linux
 	mkdir -p build
-	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) -DKJ_DEBUG -Ithird_party -Ithird_party/capnproto/c++/src -o $(.TARGET) \
+	${LINUX_CC:S|gcc$|g++|} $(LINUX_CXXFLAGS) $(KJ_DEBUG) -Ithird_party -Ithird_party/capnproto/c++/src -o $(.TARGET) \
  -Wl,--whole-archive \
  build/capnp-linux/c++/src/capnp/libcapnpc.a \
  build/capnp-linux/c++/src/capnp/libcapnp-rpc.a \
