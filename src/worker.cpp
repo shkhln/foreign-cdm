@@ -782,8 +782,10 @@ int main(int argc, char* argv[]) {
 
   KJ_ASSERT(getuid() != 0 && geteuid() != 0);
 
-  kj::TopLevelProcessContext context(argv[0]);
-  context.increaseLoggingVerbosity();
+  if (getenv("FCDM_LOG_INFO") != nullptr) {
+    kj::TopLevelProcessContext context(argv[0]);
+    context.increaseLoggingVerbosity();
+  }
 
   char* cdm_path = getenv("FCDM_CDM_SO_PATH");
   if (cdm_path == nullptr) {

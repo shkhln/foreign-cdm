@@ -257,7 +257,7 @@ int main(int argc, char* argv[]) {
 
       exe = "/opt/worker";
       arg = (char* []){ "fcdm-worker", "3", NULL };
-      env = (char* []){ "FCDM_CDM_SO_PATH=/opt/cdm.so", NULL };
+      env = (char* []){ "FCDM_CDM_SO_PATH=/opt/cdm.so", getenv("FCDM_LOG_INFO") != NULL ? "FCDM_LOG_INFO=1" : NULL, NULL };
 
     } else {
 

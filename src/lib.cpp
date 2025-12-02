@@ -518,8 +518,10 @@ public:
 
 __attribute__((constructor))
 static void init() {
-  kj::TopLevelProcessContext context("");
-  context.increaseLoggingVerbosity();
+  if (getenv("FCDM_LOG_INFO") != nullptr) {
+    kj::TopLevelProcessContext context("");
+    context.increaseLoggingVerbosity();
+  }
 }
 
 CDM_API void INITIALIZE_CDM_MODULE() {
