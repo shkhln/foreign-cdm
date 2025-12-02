@@ -16,8 +16,8 @@ Normally you want to install this from packages:
 ```
 
 Obtain Widevine or whatever, launch Chromium and try to play protected content.
-Terminate and launch it again. (For unclear reasons the playback _must_
-fail once for Chromium to register the CDM.)
+Terminate the browser and launch it again. (For unclear reasons
+the playback _must_ fail once for Chromium to register the CDM.)
 
 Alternatively, to test this do:
 
